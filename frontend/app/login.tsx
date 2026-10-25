@@ -15,8 +15,8 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("patron@haritapro.com");
-  const [password, setPassword] = useState("PatronSifre123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

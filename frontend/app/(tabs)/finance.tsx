@@ -1,13 +1,13 @@
 import { useState, useCallback } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, Modal, KeyboardAvoidingView, Platform } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, Redirect } from "expo-router";
+import { useAuth } from "@/src/auth-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Field } from "@/src/ui";
 import { DateTimeField } from "@/src/components/date-time-field";
-import { Chip, fmtMoney, fmtDate, label, SegmentedControl } from "@/src/ui";
+import { Field, Chip, fmtMoney, fmtDate, label, SegmentedControl } from "@/src/ui";
 import { UpcomingPayments, IncomeExpense, ProjectBalances, Planned } from "@/src/components/finance-parts";
 
 type Summary = {
@@ -27,7 +27,15 @@ const SEGMENTS = [
   { key: "giderler", label: "Giderler" },
 ];
 
+// Çalışanlar bu ekranı hiçbir şekilde göremez; doğrudan adresle gelse bile Projeler'e yönlendirilir.
 export default function Finance() {
+  const { user, ready } = useAuth();
+  if (!ready) return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
+  if (user?.role !== "owner") return <Redirect href="/(tabs)/projects" />;
+  return <FinanceScreen />;
+}
+
+function FinanceScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [seg, setSeg] = useState("ozet");

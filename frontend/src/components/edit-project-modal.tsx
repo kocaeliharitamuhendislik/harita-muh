@@ -4,8 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Chip } from "@/src/ui";
-import { Field } from "@/src/ui";
+import { Chip, Field } from "@/src/ui";
 import { PROJECT_CATEGORIES, ProjectCategory, catOf } from "@/src/workflows";
 
 const STATUS_OPTS = [

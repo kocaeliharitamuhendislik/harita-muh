@@ -247,8 +247,8 @@ async def startup():
     await db.steps.create_index("project_id")
     await db.documents.create_index("project_id")
 
-    owner_email = os.environ.get("OWNER_EMAIL", "patron@haritapro.com").lower()
-    owner_pw = os.environ.get("OWNER_PASSWORD", "PatronSifre123!")
+    owner_email = os.environ["OWNER_EMAIL"].lower()
+    owner_pw = os.environ["OWNER_PASSWORD"]
     existing = await db.users.find_one({"email": owner_email})
     if not existing:
         await db.users.insert_one({
@@ -840,6 +840,57 @@ async def delete_document(doc_id: str, user=Depends(current_user)):
         raise HTTPException(403, "Erişim yok")
     await db.documents.delete_one({"id": doc_id})
     return {"ok": True}
+
+
+class DocPatch(BaseModel):
+    category: Optional[str] = Field(None, min_length=1, max_length=50)
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+
+
+@api.patch("/documents/{doc_id}")
+async def update_document(doc_id: str, body: DocPatch, user=Depends(current_user)):
+    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Kayıt bulunamadı")
+    await _authorize_file_access(doc, user["id"], user["role"])
+    upd = {k: v.strip() for k, v in body.model_dump(exclude_none=True).items()}
+    if any(not v for v in upd.values()):
+        raise HTTPException(400, "Boş değer girilemez")
+    if upd:
+        await db.documents.update_one({"id": doc_id}, {"$set": upd})
+        doc.update(upd)
+    return doc
+
+
+@api.put("/documents/{doc_id}/file")
+async def replace_document_file(doc_id: str, file: UploadFile = File(...), user=Depends(current_user)):
+    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Kayıt bulunamadı")
+    await _authorize_file_access(doc, user["id"], user["role"])
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Dosya boş")
+    ext = (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin").lower()
+    storage_path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+    try:
+        await run_in_threadpool(put_object, storage_path, data, content_type)
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else 500
+        if code == 402:
+            raise HTTPException(402, "Depolama kredisi tükendi")
+        raise HTTPException(500, f"Yükleme başarısız: {code}")
+    upd = {
+        "name": file.filename or f"dosya.{ext}",
+        "content_type": content_type,
+        "size": len(data),
+        "storage_path": storage_path,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db.documents.update_one({"id": doc_id}, {"$set": upd})
+    doc.update(upd)
+    return doc
 
 app.include_router(api)
 app.add_middleware(

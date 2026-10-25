@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, KeyboardAvoidingView, Platform, RefreshControl, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, KeyboardAvoidingView, Platform, RefreshControl, Linking, TextInput, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,19 +8,18 @@ import * as ImagePicker from "expo-image-picker";
 import { api, API_BASE, getToken } from "@/src/api";
 import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
-import { Button, Card, Chip, StatusDot, fmtDate } from "@/src/ui";
+import { Button, Card, Chip, StatusDot, fmtDate, Field } from "@/src/ui";
 import { uploadForm } from "@/src/utils/upload";
-import { Field } from "@/src/ui";
 import { AssigneeChips, useTeam, teamNames } from "@/src/components/team";
 import { shareProjectReport } from "@/src/report";
-import { TextInput, ActivityIndicator } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScheduleModal, Schedule } from "@/src/components/schedule-modal";
 import { EditProjectModal } from "@/src/components/edit-project-modal";
+import { EditDocSheet } from "@/src/components/edit-doc-sheet";
 import { DOC_TYPES, catOf, categoryLabel, docLabel, stageInfo } from "@/src/workflows";
 
 type Project = any;
-type Doc = { id: string; name: string; category: string; content_type: string; size: number; storage_path: string; created_at: string };
+type Doc = { id: string; name: string; category: string; content_type: string; size: number; storage_path: string; created_at: string; uploaded_by: string };
 type Step = { id: string; institution: string; title: string; status: string; note: string };
 
 const TABS = [
@@ -130,13 +129,14 @@ export default function ProjectDetail() {
 // -------- EVRAKLAR TAB --------
 function DocsTab({ project }: { project: any }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const types = DOC_TYPES[catOf(project)];
   const [docs, setDocs] = useState<Doc[]>([]);
   const [pickFor, setPickFor] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [permBlocked, setPermBlocked] = useState(false);
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [editDoc, setEditDoc] = useState<Doc | null>(null);
 
   const load = useCallback(async () => {
     try { setDocs(await api(`/projects/${project.id}/documents`)); } catch {}
@@ -147,7 +147,7 @@ function DocsTab({ project }: { project: any }) {
   const others = docs.filter((d) => !known.has(d.category));
   const doneCount = types.filter((t) => docs.some((d) => d.category === t.key)).length;
 
-  const getAsset = async (source: "file" | "camera" | "library") => {
+  const getAsset = async (source: "file" | "camera" | "library", onDenied?: (blocked: boolean) => void) => {
     if (source === "file") {
       const r = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false });
       if (r.canceled) return null;
@@ -158,6 +158,7 @@ function DocsTab({ project }: { project: any }) {
       let perm = await ImagePicker.getCameraPermissionsAsync();
       if (!perm.granted && perm.canAskAgain) perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
+        if (onDenied) { onDenied(!perm.canAskAgain); return null; }
         setPermBlocked(!perm.canAskAgain);
         setErr("Fotoğraf çekmek için kamera izni gerekiyor.");
         return null;
@@ -202,22 +203,14 @@ function DocsTab({ project }: { project: any }) {
     } catch (e: any) { setErr(e?.message || "Dosya açılamadı"); }
   };
 
-  const deleteDoc = async (id: string) => {
-    if (confirmDel !== id) { setConfirmDel(id); return; }
-    try { await api(`/documents/${id}`, { method: "DELETE" }); setConfirmDel(null); load(); }
-    catch (e: any) { setErr(e?.message || "Silinemedi"); }
-  };
-
   const fileRow = (d: Doc) => (
     <View key={d.id} style={styles.fileRow}>
       <Pressable testID={`doc-${d.id}`} onPress={() => openDoc(d)} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 36 }}>
         <Ionicons name={d.content_type.startsWith("image") ? "image-outline" : "document-outline"} size={18} color={colors.brandPrimary} />
         <Text style={styles.fileName} numberOfLines={1}>{d.name}</Text>
       </Pressable>
-      <Pressable testID={`del-doc-${d.id}`} onPress={() => deleteDoc(d.id)} hitSlop={10}>
-        {confirmDel === d.id
-          ? <Text style={{ color: colors.error, fontSize: 12, fontWeight: "700" }}>Sil?</Text>
-          : <Ionicons name="trash-outline" size={16} color={colors.muted} />}
+      <Pressable testID={`edit-doc-${d.id}`} onPress={() => setEditDoc(d)} hitSlop={12} style={{ minWidth: 36, minHeight: 36, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name="create-outline" size={18} color={colors.brandPrimary} />
       </Pressable>
     </View>
   );
@@ -286,6 +279,7 @@ function DocsTab({ project }: { project: any }) {
           </Pressable>
         </View>
       </Modal>
+      <EditDocSheet doc={editDoc} types={types} canDelete={!!editDoc && (user?.role === "owner" || editDoc.uploaded_by === user?.id)} onClose={() => setEditDoc(null)} onChanged={load} getAsset={getAsset} />
     </>
   );
 }

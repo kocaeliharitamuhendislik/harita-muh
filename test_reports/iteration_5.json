@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 5: editing documents (evrak). Backend: 82 pytest tests run (68 regression + 14 new), 81 pass. The 2 PATCH /projects validation failures from iteration 4 now pass. The 1 new failure: PATCH /documents/{id} accepts a whitespace-only name and saves an empty name. PATCH rename/category, 404, employee permissions (assigned 200, unassigned 403), no auth 401, PUT file replace (new name, size and content_type, category kept, GET /file returns the new bytes, empty file 400, 404, employee permissions) and DELETE permissions all work. Frontend (375x667, owner and employee): the pencil edit-doc-{id} (36x36 plus hitSlop) opens the 'Evrakı Düzenle' sheet with the name pre-filled. edit-doc-save-name is disabled until the name changes. Rename updates the row and closes the sheet. Changing the type moves the file between evrak cards (tapu→kimlik: Tapu shows 'Eksik', Kimlik shows '1 dosya'). Moving it to 'Diğer Dosya' sends it to the Diğer Dosyalar card and the progress goes 1/7→0/7. Delete needs two taps ('Evrakı Sil'→'Silmeyi Onayla'), removes the row and updates the progress. The 3 replace-file buttons are shown (the web picker itself was not automated). Kapat closes the sheet. An employee can rename an owner doc. When an employee tries to delete an owner doc, the sheet shows 'Erişim yok'. Bugs found: duplicate 'diger' type chip in 'diger' category projects (React duplicate key error); blank name accepted by the API.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/documents/{id}", "issue": "name='   ' passes min_length=1, is then stripped to '' and saved, so the file row has no name. Fix: strip before validating (field_validator), or return 400 when the stripped value is empty. The same applies to category. Reference: server.py:845-858"},
+      {"endpoint": "PATCH /api/documents/{id}", "issue": "category is any string of 1-50 characters with no check against the known evrak keys. A wrong key makes the file fall into 'Diğer Dosyalar'. This is low risk but has no validation."},
+      {"endpoint": "PUT /api/documents/{id}/file", "issue": "The old storage object is not removed after a replace and is left orphaned in storage. Optional: delete it if the storage API allows. Also, an employee can replace the file of an owner-uploaded doc but cannot delete it. The spec allows this, but the two rules are inconsistent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "EditDocSheet type chips", "issue": "In projects with category 'diger', DOC_TYPES.diger already has key 'diger', and allTypes appends another {key:'diger', label:'Diğer Dosya'}. Two chips render with the same key and testID edit-doc-type-diger (count=2). The console shows 'Encountered two children with the same key ... diger'. Fix: only append 'diger' when the types do not already include it. Reference: src/components/edit-doc-sheet.tsx:65", "testID": "edit-doc-type-diger", "priority": "MEDIUM"},
+      {"component": "EditDocSheet delete for employee", "issue": "An employee sees 'Evrakı Sil' on docs uploaded by others. After 2 taps the backend returns 403, and 'Erişim yok' appears at the top of the ScrollView while the user has scrolled down to the button, so they may not see it. Hide or disable delete when role != owner && doc.uploaded_by != me, or show the error next to the button.", "testID": "edit-doc-delete", "priority": "LOW"},
+      {"component": "EditDocSheet replace via camera", "issue": "If camera permission is denied, getAsset sets err/permBlocked in DocsTab, behind the open modal. The user gets no feedback inside the sheet. Reference: app/project/[id].tsx:159-162", "testID": "edit-doc-src-camera", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "EditDocSheet", "issues": ["The sheet maxHeight is 640, so on a 667px screen the backdrop is only 27px and the sheet is almost full screen. The content scrolls correctly. The edit pencil hit box is 36x36 plus hitSlop 12, which is fine."]}
+    ],
+    "react_native_issues": [
+      {"component": "Duplicate React key", "issue": "Duplicate key 'diger' in the EditDocSheet chips map. Reference: src/components/edit-doc-sheet.tsx:65-86"}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter5_doc_edit.py", "/app/backend/tests/helper_seed_docedit.py", "/app/test_reports/pytest/pytest_iter5.xml"],
+  "action_items": [
+    "DocPatch: reject a name or category that is blank after stripping (400/422). Reference: server.py:845-858",
+    "edit-doc-sheet.tsx:65: do not append the 'diger' chip when the types already contain 'diger' (duplicate key and testID)",
+    "Hide or disable the edit-doc-delete button for employees on docs they did not upload, or show the error next to the button",
+    "Show the camera-permission error inside EditDocSheet when a replace is attempted",
+    "Optional: check document category against the known keys; delete the old storage object after PUT /file"
+  ],
+  "critical_code_review_comments": [
+    "server.py:856: the strip happens after Pydantic min_length validation, so a whitespace-only value passes.",
+    "edit-doc-sheet.tsx: the error is shown only at the top of the ScrollView, so it is not visible when the user acts near the bottom (delete or replace)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter5_doc_edit.py", "/app/backend/tests/helper_seed_docedit.py"],
+  "success_rate": {"backend": "98.8% (81/82)", "frontend": "95% (all core doc-edit flows pass; duplicate diger chip bug)"},
+  "seed_data_creation": "The TEST_UI_DocEdit_kadastro and TEST_UI_DocEdit_diger projects were created by helper_seed_docedit.py and deleted afterwards. Pytest fixtures clean up their own TEST_ projects.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Doc edit testIDs: edit-doc-{id}, edit-doc-name, edit-doc-save-name, edit-doc-type-{key}, edit-doc-src-file/camera/library, edit-doc-delete, edit-doc-cancel, edit-doc-error. The sheet slides in, so wait about 1.5s after opening before clicking, or clicks fail with 'outside of viewport'. Use EXPO_PUBLIC_BACKEND_URL (frontend/.env has no EXPO_BACKEND_URL key)."
+}
