@@ -8,9 +8,14 @@ import * as ImagePicker from "expo-image-picker";
 import { api, API_BASE, getToken } from "@/src/api";
 import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
-import { Button, Card, Chip, StatusDot, fmtMoney, fmtDate } from "@/src/ui";
+import { Button, Card, Chip, StatusDot, fmtMoney, fmtDate, label } from "@/src/ui";
 import { uploadForm } from "@/src/utils/upload";
 import { Field } from "../(tabs)/projects";
+import { DateTimeField } from "@/src/components/date-time-field";
+import { AssigneeChips, useTeam, teamNames } from "@/src/components/team";
+import { shareProjectReport, whatsappNumber } from "@/src/report";
+import { TextInput, ActivityIndicator } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 
 type Project = any;
 type Doc = { id: string; name: string; category: string; content_type: string; size: number; storage_path: string; created_at: string };
@@ -32,6 +37,22 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState<string>(TABS[0]);
   const [project, setProject] = useState<Project | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const team = useTeam();
+
+  const makeReport = async () => {
+    if (!project) return;
+    setReporting(true);
+    setNotice(null);
+    try {
+      await shareProjectReport(project, isOwner, teamNames(team, project.assigned_user_ids));
+    } catch (e: any) {
+      setNotice(e?.message || "Rapor oluşturulamadı");
+    } finally {
+      setReporting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try { setProject(await api(`/projects/${id}`)); } catch { router.back(); }
@@ -54,11 +75,20 @@ export default function ProjectDetail() {
           <Text style={styles.hTitle} numberOfLines={1}>{project.name}</Text>
           {!!project.client_name && <Text style={styles.hSub} numberOfLines={1}>{project.client_name}</Text>}
         </View>
+        <Pressable testID="report-btn" onPress={makeReport} disabled={reporting} style={xstyles.reportBtn}>
+          {reporting ? (
+            <ActivityIndicator size="small" color={colors.onBrandTertiary} />
+          ) : (
+            <Ionicons name="document-text-outline" size={18} color={colors.onBrandTertiary} />
+          )}
+          <Text style={xstyles.reportText}>PDF</Text>
+        </Pressable>
       </View>
+      {!!notice && <Text testID="report-notice" style={xstyles.notice}>{notice}</Text>}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={{ maxHeight: 56 }}>
         {TABS.map((t) => (
-          <Chip key={t} label={t[0].toUpperCase() + t.slice(1)} active={tab === t} onPress={() => setTab(t)} testID={`tab-${t}`} />
+          <Chip key={t} label={label(t)} active={tab === t} onPress={() => setTab(t)} testID={`tab-${t}`} />
         ))}
       </ScrollView>
 
@@ -66,6 +96,7 @@ export default function ProjectDetail() {
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100, gap: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
       >
+        <TeamCard project={project} isOwner={isOwner} team={team} onChange={load} />
         {tab === "finans" && isOwner && <FinanceTab project={project} onChange={load} />}
         {tab === "evraklar" && <DocsTab projectId={project.id} />}
         {tab === "arazi" && <SchedulesTab projectId={project.id} />}
@@ -101,6 +132,7 @@ function FinanceTab({ project, onChange }: { project: any; onChange: () => void 
         </View>
         <Text style={{ marginTop: 6, color: colors.muted, fontSize: 13 }}>%{Math.round(pct * 100)}</Text>
       </Card>
+      <ReminderCard project={project} onChange={onChange} />
       <Card>
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle}>Ödemeler</Text>
@@ -131,12 +163,12 @@ function FinanceTab({ project, onChange }: { project: any; onChange: () => void 
 function AddPaymentModal({ visible, onClose, projectId, onCreated }: any) {
   const insets = useSafeAreaInsets();
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<Date>(new Date());
   const [note, setNote] = useState("");
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt) return;
-    await api(`/projects/${projectId}/payments`, { method: "POST", body: JSON.stringify({ amount: amt, date: new Date(date + "T00:00:00").toISOString(), note }) });
+    await api(`/projects/${projectId}/payments`, { method: "POST", body: JSON.stringify({ amount: amt, date: date.toISOString(), note }) });
     setAmount(""); setNote(""); onClose(); onCreated();
   };
   return (
@@ -149,7 +181,7 @@ function AddPaymentModal({ visible, onClose, projectId, onCreated }: any) {
         </View>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
           <Field label="Tutar (₺)" value={amount} onChangeText={setAmount} keyboardType="numeric" testID="pay-amount" />
-          <Field label="Tarih (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+          <DateTimeField label="Tahsilat Tarihi" value={date} onChange={setDate} testID="pay-date" />
           <Field label="Açıklama" value={note} onChangeText={setNote} multiline />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -212,7 +244,7 @@ function DocsTab({ projectId }: { projectId: string }) {
       <Card>
         <Text style={styles.cardTitle}>Kategori</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 2 }}>
-          {DOC_CATS.map((c) => <Chip key={c} label={c} active={cat === c} onPress={() => setCat(c)} />)}
+          {DOC_CATS.map((c) => <Chip key={c} label={label(c)} active={cat === c} onPress={() => setCat(c)} testID={`doc-cat-${c}`} />)}
         </ScrollView>
         <View style={{ height: spacing.md }} />
         <View style={{ flexDirection: "row", gap: spacing.md }}>
@@ -229,7 +261,7 @@ function DocsTab({ projectId }: { projectId: string }) {
               <Ionicons name={d.content_type.startsWith("image") ? "image" : "document"} size={28} color={colors.brandPrimary} />
             </View>
             <Text style={styles.docName} numberOfLines={2}>{d.name}</Text>
-            <Text style={styles.docCat}>{d.category}</Text>
+            <Text style={styles.docCat}>{label(d.category)}</Text>
           </Pressable>
         ))}
       </View>
@@ -359,6 +391,144 @@ function AddStepModal({ visible, onClose, projectId, onCreated }: any) {
     </Modal>
   );
 }
+
+// -------- EKİP --------
+function TeamCard({ project, isOwner, team, onChange }: any) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [assigned, setAssigned] = useState<string[]>(project.assigned_user_ids || []);
+  const [err, setErr] = useState<string | null>(null);
+  const names = teamNames(team, assigned);
+
+  const save = async (ids: string[]) => {
+    const prev = assigned;
+    setAssigned(ids);
+    setErr(null);
+    try {
+      await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ assigned_user_ids: ids }) });
+      qc.invalidateQueries({ queryKey: ["team"] });
+      onChange();
+    } catch (e: any) {
+      setAssigned(prev);
+      setErr(e?.message || "Kaydedilemedi");
+    }
+  };
+
+  return (
+    <Card>
+      <View style={styles.rowBetween}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 }}>
+          <Ionicons name="people-outline" size={18} color={colors.brandPrimary} />
+          <Text testID="team-names" style={{ fontSize: 14, color: colors.onSurface, flex: 1 }} numberOfLines={2}>
+            {names.length ? names.join(", ") : "Ekip atanmadı"}
+          </Text>
+        </View>
+        {isOwner && (
+          <Pressable testID="edit-team-btn" onPress={() => setEditing((v) => !v)} hitSlop={8}>
+            <Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{editing ? "Tamam" : "Ata"}</Text>
+          </Pressable>
+        )}
+      </View>
+      {isOwner && editing && (
+        <View style={{ marginTop: spacing.md }}>
+          <AssigneeChips team={team} selected={assigned} onChange={save} label="" testIDPrefix="team-toggle" />
+        </View>
+      )}
+      {!!err && <Text testID="team-error" style={{ color: colors.error, marginTop: spacing.sm, fontSize: 13 }}>{err}</Text>}
+    </Card>
+  );
+}
+
+// -------- WHATSAPP HATIRLATMA --------
+function ReminderCard({ project, onChange }: any) {
+  const [phone, setPhone] = useState(project.client_phone || "");
+  const [editing, setEditing] = useState(!project.client_phone);
+  const [phoneErr, setPhoneErr] = useState<string | null>(null);
+  const remaining = project.remaining_amount || 0;
+
+  const savePhone = async () => {
+    setPhoneErr(null);
+    try {
+      await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ client_phone: phone.trim() }) });
+      setEditing(false);
+      onChange();
+    } catch (e: any) {
+      setPhoneErr(e?.message || "Telefon kaydedilemedi");
+    }
+  };
+
+  const send = () => {
+    const num = whatsappNumber(project.client_phone || phone);
+    const msg =
+      `Merhaba${project.client_name ? " " + project.client_name : ""}, "${project.name}" işi için ` +
+      `kalan ödeme tutarınız ${fmtMoney(remaining)}'dir. Bilgilerinize sunar, iyi günler dileriz.`;
+    Linking.openURL(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`);
+  };
+
+  return (
+    <Card>
+      <View style={styles.rowBetween}>
+        <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Ödeme Hatırlatma</Text>
+        {!editing && (
+          <Pressable testID="edit-phone-btn" onPress={() => setEditing(true)} hitSlop={8}>
+            <Text style={{ color: colors.brandPrimary, fontWeight: "600" }}>Telefonu düzenle</Text>
+          </Pressable>
+        )}
+      </View>
+      {editing ? (
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+          <TextInput
+            testID="client-phone-input"
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="Müşteri telefonu (05xx...)"
+            placeholderTextColor={colors.muted}
+            keyboardType="phone-pad"
+            style={xstyles.phoneInput}
+          />
+          <Pressable testID="save-phone-btn" onPress={savePhone} disabled={!phone.trim()} style={[xstyles.phoneSave, !phone.trim() && { opacity: 0.5 }]}>
+            <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Kaydet</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Text style={{ color: colors.muted, marginTop: spacing.xs }}>{project.client_phone}</Text>
+      )}
+      {!!phoneErr && <Text testID="phone-error" style={{ color: colors.error, marginTop: spacing.sm, fontSize: 13 }}>{phoneErr}</Text>}
+      {remaining <= 0 ? (
+        <Text style={{ color: colors.success, marginTop: spacing.md, fontWeight: "600" }}>Ödeme tamamlandı, hatırlatmaya gerek yok.</Text>
+      ) : (
+        <Pressable
+          testID="whatsapp-reminder-btn"
+          onPress={send}
+          disabled={!project.client_phone}
+          style={[xstyles.waBtn, !project.client_phone && { opacity: 0.5 }]}
+        >
+          <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
+          <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 15 }}>WhatsApp ile Hatırlat • {fmtMoney(remaining)}</Text>
+        </Pressable>
+      )}
+    </Card>
+  );
+}
+
+const xstyles = StyleSheet.create({
+  reportBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4, height: 44, paddingHorizontal: spacing.md,
+    borderRadius: radius.pill, backgroundColor: colors.brandTertiary,
+  },
+  reportText: { color: colors.onBrandTertiary, fontWeight: "700", fontSize: 13 },
+  notice: { color: colors.error, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, fontSize: 13 },
+  phoneInput: {
+    flex: 1, height: 44, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, backgroundColor: colors.surface, color: colors.onSurface, fontSize: 15,
+  },
+  phoneSave: { height: 44, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  // WhatsApp brand green stays identical across themes
+  waBtn: {
+    marginTop: spacing.md, height: 48, borderRadius: radius.md, backgroundColor: "#25D366",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm,
+  },
+});
 
 function KpiSm({ label, value, color }: any) {
   return (

@@ -6,7 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth-context";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Button, Card, Chip, fmtMoney } from "@/src/ui";
+import { Button, Card, Chip, fmtMoney, label } from "@/src/ui";
+import { AssigneeChips, useTeam } from "@/src/components/team";
 
 type Project = {
   id: string;
@@ -69,7 +70,7 @@ export default function Projects() {
         style={{ maxHeight: 56 }}
       >
         {STATUSES.map((s) => (
-          <Chip key={s} label={s[0].toUpperCase() + s.slice(1)} active={filter === s} onPress={() => setFilter(s)} testID={`filter-${s}`} />
+          <Chip key={s} label={label(s)} active={filter === s} onPress={() => setFilter(s)} testID={`filter-${s}`} />
         ))}
       </ScrollView>
 
@@ -99,7 +100,7 @@ export default function Projects() {
                 {!!item.client_name && <Text style={styles.pClient} numberOfLines={1}>{item.client_name}</Text>}
               </View>
               <View style={[styles.statusPill, pillColor(item.status)]}>
-                <Text style={styles.statusText}>{item.status}</Text>
+                <Text style={styles.statusText}>{label(item.status)}</Text>
               </View>
             </View>
             {!!item.location && (
@@ -155,10 +156,13 @@ function CreateProjectModal({ visible, onClose, onCreated }: { visible: boolean;
   const [desc, setDesc] = useState("");
   const [offer, setOffer] = useState("");
   const [agreed, setAgreed] = useState("");
+  const [phone, setPhone] = useState("");
+  const [assignees, setAssignees] = useState<string[]>([]);
+  const team = useTeam();
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const reset = () => { setName(""); setClientName(""); setLocation(""); setDesc(""); setOffer(""); setAgreed(""); setErr(null); };
+  const reset = () => { setName(""); setClientName(""); setLocation(""); setDesc(""); setOffer(""); setAgreed(""); setPhone(""); setAssignees([]); setErr(null); };
 
   const save = async () => {
     if (!name.trim()) { setErr("Proje adı gerekli"); return; }
@@ -168,9 +172,9 @@ function CreateProjectModal({ visible, onClose, onCreated }: { visible: boolean;
         method: "POST",
         body: JSON.stringify({
           name: name.trim(), client_name: clientName.trim(), location: location.trim(),
-          description: desc.trim(), status: "aktif",
+          description: desc.trim(), status: "aktif", client_phone: phone.trim(),
           offer_amount: parseFloat(offer) || 0, agreed_amount: parseFloat(agreed) || 0,
-          assigned_user_ids: [],
+          assigned_user_ids: assignees,
         }),
       });
       reset();
@@ -196,10 +200,12 @@ function CreateProjectModal({ visible, onClose, onCreated }: { visible: boolean;
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
           <Field label="Proje Adı *" value={name} onChangeText={setName} placeholder="Örn: Tapu Aplikasyonu" testID="input-name" />
           <Field label="Müşteri" value={clientName} onChangeText={setClientName} placeholder="Müşteri adı" testID="input-client" />
+          <Field label="Müşteri Telefonu" value={phone} onChangeText={setPhone} placeholder="05xx xxx xx xx" keyboardType="phone-pad" testID="input-phone" />
           <Field label="Lokasyon" value={location} onChangeText={setLocation} placeholder="İl / İlçe / Mahalle" testID="input-location" />
           <Field label="Açıklama" value={desc} onChangeText={setDesc} placeholder="Not" multiline testID="input-desc" />
           <Field label="Teklif Tutarı (₺)" value={offer} onChangeText={setOffer} keyboardType="numeric" testID="input-offer" />
           <Field label="Anlaşılan Tutar (₺)" value={agreed} onChangeText={setAgreed} keyboardType="numeric" testID="input-agreed" />
+          <AssigneeChips team={team} selected={assignees} onChange={setAssignees} testIDPrefix="proj-assignee" />
           {err && <Text style={{ color: colors.error }}>{err}</Text>}
         </ScrollView>
       </KeyboardAvoidingView>

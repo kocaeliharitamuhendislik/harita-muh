@@ -103,6 +103,16 @@ export const styles = StyleSheet.create({
   },
 });
 
+export const LABELS: Record<string, string> = {
+  hepsi: "Hepsi", aktif: "Aktif", bitti: "Bitti", iptal: "İptal",
+  genel: "Genel", arazi: "Arazi", ulasim: "Ulaşım", kurum_harc: "Kurum Harcı", malzeme: "Malzeme",
+  tapu: "Tapu", imar: "İmar", kroki: "Kroki", foto: "Fotoğraf", diger: "Diğer",
+  finans: "Finans", evraklar: "Evraklar", kurum: "Kurum",
+  beklemede: "Beklemede", onaylandi: "Onaylandı", reddedildi: "Reddedildi",
+  planlandi: "Planlandı", tamamlandi: "Tamamlandı",
+};
+export const label = (k: string) => LABELS[k] ?? k;
+
 export function fmtMoney(n?: number | null) {
   const v = Number(n || 0);
   return v.toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 });

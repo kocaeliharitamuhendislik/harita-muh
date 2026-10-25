@@ -16,6 +16,7 @@ Harita mühendislik firması için mobil takip uygulaması: sahip ve çalışanl
 - Files: Emergent Object Storage via backend; web viewing uses short-lived ?token=
 
 ## Implemented (2026-06)
+- Iteration 2: employee assignment on projects/schedules (schedules inherit project team), tap-to-pick date/time sheet, WhatsApp remaining-balance reminder (client phone), PDF project report (finance only for owner), week navigation in calendar, Turkish labels, timezone fix (tz_aware Mongo)
 - Auth, owner seeding, employee create/delete
 - Projects CRUD, payments with auto remaining calc, expenses, finance summary + monthly chart
 - Schedules (14-day strip calendar, completion toggle)
@@ -24,6 +25,5 @@ Harita mühendislik firması için mobil takip uygulaması: sahip ve çalışanl
 - Backend tests: /app/backend/tests/test_api.py (27 passing)
 
 ## Backlog
-- P1: Assign employees to projects/schedules from UI (backend supports assigned_user_ids)
-- P1: Native date/time pickers; edit project screen
+- P1: Edit project screen (name/amounts/status); employee password change
 - P2: PDF/Excel reports, customer payment reminders, employee password change

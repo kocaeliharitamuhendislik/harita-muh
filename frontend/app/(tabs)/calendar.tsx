@@ -1,4 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { DateTimeField } from "@/src/components/date-time-field";
+import { AssigneeChips, useTeam } from "@/src/components/team";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,6 +39,12 @@ export default function CalendarScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [selected, setSelected] = useState<Date>(startOfDay(new Date()));
+  const [stripStart, setStripStart] = useState<Date>(startOfDay(new Date()));
+  const shiftStrip = (n: number) => {
+    const s = new Date(stripStart); s.setDate(s.getDate() + n);
+    setStripStart(s); setSelected(s);
+  };
+  const jumpTo = (d: Date) => { const s = startOfDay(d); setStripStart(s); setSelected(s); };
 
   const load = useCallback(async () => {
     try {
@@ -50,7 +58,7 @@ export default function CalendarScreen() {
 
   // 14-day strip from today
   const days = Array.from({ length: 14 }).map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() + i); return startOfDay(d);
+    const d = new Date(stripStart); d.setDate(d.getDate() + i); return startOfDay(d);
   });
 
   const todays = items.filter((it) => sameDay(new Date(it.date), selected))
@@ -70,7 +78,18 @@ export default function CalendarScreen() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title}>Arazi Takvimi</Text>
-        <Text style={styles.sub}>{selected.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" })}</Text>
+        <View style={styles.navRow}>
+          <Text style={[styles.sub, { flex: 1 }]}>{selected.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</Text>
+          <Pressable testID="strip-prev" onPress={() => shiftStrip(-7)} style={styles.navBtn}>
+            <Ionicons name="chevron-back" size={20} color={colors.onSurface} />
+          </Pressable>
+          <Pressable testID="strip-today" onPress={() => jumpTo(new Date())} style={styles.todayBtn}>
+            <Text style={{ color: colors.onBrandTertiary, fontWeight: "700", fontSize: 13 }}>Bugün</Text>
+          </Pressable>
+          <Pressable testID="strip-next" onPress={() => shiftStrip(7)} style={styles.navBtn}>
+            <Ionicons name="chevron-forward" size={20} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip} style={{ maxHeight: 92 }}>
@@ -78,7 +97,7 @@ export default function CalendarScreen() {
           const active = sameDay(d, selected);
           const count = items.filter((it) => sameDay(new Date(it.date), d)).length;
           return (
-            <Pressable key={d.toISOString()} onPress={() => setSelected(d)} testID={`day-${d.toISOString().slice(0,10)}`}
+            <Pressable key={d.toISOString()} onPress={() => setSelected(d)} testID={`day-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`}
               style={[styles.dayBox, { backgroundColor: active ? colors.brandPrimary : colors.surfaceSecondary, borderColor: active ? colors.brandPrimary : colors.border }]}>
               <Text style={[styles.dayWd, { color: active ? colors.onBrandPrimary : colors.muted }]}>{WEEKDAYS[(d.getDay() + 6) % 7]}</Text>
               <Text style={[styles.dayNum, { color: active ? colors.onBrandPrimary : colors.onSurface }]}>{d.getDate()}</Text>
@@ -141,7 +160,7 @@ export default function CalendarScreen() {
       <CreateScheduleModal
         visible={showCreate}
         onClose={() => setShowCreate(false)}
-        onCreated={load}
+        onCreated={(d?: Date) => { load(); if (d) jumpTo(d); }}
         projects={projects}
         defaultDate={selected}
       />
@@ -153,8 +172,17 @@ function CreateScheduleModal({ visible, onClose, onCreated, projects, defaultDat
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [dateStr, setDateStr] = useState(defaultDate.toISOString().slice(0, 10));
-  const [timeStr, setTimeStr] = useState("09:00");
+  const { user } = useAuth();
+  const isOwner = user?.role === "owner";
+  const team = useTeam();
+  const at9 = (d: Date) => { const n = new Date(d); n.setHours(9, 0, 0, 0); return n; };
+  const [when, setWhen] = useState<Date>(at9(defaultDate));
+  const [assignees, setAssignees] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visible) { setWhen(at9(defaultDate)); setAssignees([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
   const [duration, setDuration] = useState("2");
   const [location, setLocation] = useState("");
   const [note, setNote] = useState("");
@@ -165,17 +193,17 @@ function CreateScheduleModal({ visible, onClose, onCreated, projects, defaultDat
     if (!title.trim()) { setErr("Başlık gerekli"); return; }
     setSaving(true);
     try {
-      const iso = new Date(`${dateStr}T${timeStr}:00`).toISOString();
+      const iso = when.toISOString();
       await api("/schedules", {
         method: "POST",
         body: JSON.stringify({
           project_id: projectId, title: title.trim(), date: iso,
           duration_hours: parseFloat(duration) || 1, location: location.trim(), note: note.trim(),
-          assigned_user_ids: [],
+          assigned_user_ids: assignees,
         }),
       });
       onClose();
-      onCreated();
+      onCreated(when);
       setTitle(""); setLocation(""); setNote(""); setErr(null);
     } catch (e: any) { setErr(e?.message || "Hata"); }
     finally { setSaving(false); }
@@ -200,10 +228,15 @@ function CreateScheduleModal({ visible, onClose, onCreated, projects, defaultDat
               ))}
             </ScrollView>
           </View>
-          <View style={{ flexDirection: "row", gap: spacing.md }}>
-            <View style={{ flex: 1 }}><Field label="Tarih (YYYY-MM-DD)" value={dateStr} onChangeText={setDateStr} testID="sch-date" /></View>
-            <View style={{ flex: 1 }}><Field label="Saat (HH:MM)" value={timeStr} onChangeText={setTimeStr} testID="sch-time" /></View>
-          </View>
+          <DateTimeField label="Tarih ve Saat" value={when} onChange={setWhen} withTime testID="sch-datetime" />
+          {isOwner && (
+            <View>
+              <AssigneeChips team={team} selected={assignees} onChange={setAssignees} testIDPrefix="sch-assignee" />
+              {projectId && assignees.length === 0 && (
+                <Text style={{ color: colors.muted, fontSize: 12, marginTop: spacing.xs }}>Seçilmezse projenin ekibi atanır.</Text>
+              )}
+            </View>
+          )}
           <Field label="Süre (saat)" value={duration} onChangeText={setDuration} keyboardType="numeric" />
           <Field label="Lokasyon" value={location} onChangeText={setLocation} placeholder="Adres / parsel" />
           <Field label="Not" value={note} onChangeText={setNote} multiline />
@@ -218,6 +251,9 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, backgroundColor: colors.surface },
   title: { fontSize: 28, fontWeight: "700", color: colors.onSurface, letterSpacing: -0.5 },
   sub: { fontSize: 13, color: colors.muted, marginTop: 4, textTransform: "capitalize" },
+  navRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  navBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  todayBtn: { height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
   strip: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center", height: 92 },
   dayBox: {
     width: 60, height: 76, borderRadius: radius.md, borderWidth: 1,

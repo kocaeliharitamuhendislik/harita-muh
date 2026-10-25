@@ -25,7 +25,7 @@ STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 _storage_key: Optional[str] = None
 
-client = AsyncIOMotorClient(MONGO_URL)
+client = AsyncIOMotorClient(MONGO_URL, tz_aware=True)
 db = client[DB_NAME]
 
 app = FastAPI()
@@ -127,12 +127,24 @@ class UserOut(BaseModel):
 class ProjectIn(BaseModel):
     name: str
     client_name: str = ""
+    client_phone: str = ""
     location: str = ""
     description: str = ""
     status: str = "aktif"  # aktif, bitti, iptal
     offer_amount: float = 0
     agreed_amount: float = 0
     assigned_user_ids: List[str] = []
+
+class ProjectPatch(BaseModel):
+    name: Optional[str] = None
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    offer_amount: Optional[float] = None
+    agreed_amount: Optional[float] = None
+    assigned_user_ids: Optional[List[str]] = None
 
 class ProjectOut(ProjectIn):
     id: str
@@ -351,6 +363,27 @@ async def update_project(pid: str, body: ProjectIn, owner=Depends(require_owner)
     doc = await db.projects.find_one({"id": pid}, {"_id": 0})
     return doc
 
+@api.patch("/projects/{pid}")
+async def patch_project(pid: str, body: ProjectPatch, owner=Depends(require_owner)):
+    update = body.model_dump(exclude_unset=True)
+    if not update:
+        raise HTTPException(400, "Güncellenecek alan yok")
+    if update.get("assigned_user_ids"):
+        ids = list(dict.fromkeys(update["assigned_user_ids"]))
+        found = await db.users.count_documents({"id": {"$in": ids}})
+        if found != len(ids):
+            raise HTTPException(400, "Geçersiz çalışan seçimi")
+        update["assigned_user_ids"] = ids
+    r = await db.projects.update_one({"id": pid}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Proje bulunamadı")
+    await _recalc_project(pid)
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+@api.get("/team")
+async def list_team(user=Depends(current_user)):
+    return await db.users.find({"disabled": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1, "role": 1}).to_list(500)
+
 @api.delete("/projects/{pid}")
 async def delete_project(pid: str, owner=Depends(require_owner)):
     await db.projects.delete_one({"id": pid})
@@ -427,7 +460,7 @@ async def finance_summary(owner=Depends(require_owner)):
     six_mo = datetime.now(timezone.utc) - timedelta(days=180)
     pay_agg = await db.payments.aggregate([
         {"$match": {"date": {"$gte": six_mo}}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m", "date": "$date"}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m", "date": "$date", "timezone": "Europe/Istanbul"}},
                     "total": {"$sum": "$amount"}}},
         {"$sort": {"_id": 1}},
     ]).to_list(50)
@@ -456,6 +489,10 @@ async def list_schedules(user=Depends(current_user)):
 @api.post("/schedules")
 async def create_schedule(body: ScheduleIn, user=Depends(current_user)):
     doc = body.dict()
+    if body.project_id and not body.assigned_user_ids:
+        proj = await db.projects.find_one({"id": body.project_id}, {"_id": 0, "assigned_user_ids": 1})
+        if proj:
+            doc["assigned_user_ids"] = proj.get("assigned_user_ids") or []
     doc.update({
         "id": str(uuid.uuid4()),
         "status": "planlandi",

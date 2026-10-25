@@ -6,7 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { Field } from "./projects";
-import { Chip, fmtMoney, fmtDate } from "@/src/ui";
+import { DateTimeField } from "@/src/components/date-time-field";
+import { Chip, fmtMoney, fmtDate, label } from "@/src/ui";
 
 type Summary = {
   total_offer: number; total_agreed: number; total_received: number; total_remaining: number;
@@ -98,7 +99,7 @@ export default function Finance() {
               {expenses.slice(0, 10).map((e) => (
                 <View key={e.id} style={styles.expRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.expCat}>{e.category}</Text>
+                    <Text style={styles.expCat}>{label(e.category)}</Text>
                     {!!e.note && <Text style={styles.expNote}>{e.note}</Text>}
                     <Text style={styles.expDate}>{fmtDate(e.date)}</Text>
                   </View>
@@ -132,7 +133,7 @@ function AddExpenseModal({ visible, onClose, onCreated }: any) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [category, setCategory] = useState("genel");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -140,7 +141,7 @@ function AddExpenseModal({ visible, onClose, onCreated }: any) {
     if (!amt) return;
     setSaving(true);
     try {
-      await api("/expenses", { method: "POST", body: JSON.stringify({ amount: amt, note, category, date: new Date(date + "T00:00:00").toISOString() }) });
+      await api("/expenses", { method: "POST", body: JSON.stringify({ amount: amt, note, category, date: date.toISOString() }) });
       setAmount(""); setNote("");
       onClose(); onCreated();
     } finally { setSaving(false); }
@@ -160,11 +161,11 @@ function AddExpenseModal({ visible, onClose, onCreated }: any) {
             <Text style={{ fontSize: 13, color: colors.onSurfaceTertiary, fontWeight: "600", marginBottom: spacing.xs }}>Kategori</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
               {CATEGORIES.map((c) => (
-                <Chip key={c} label={c} active={category === c} onPress={() => setCategory(c)} />
+                <Chip key={c} label={label(c)} active={category === c} onPress={() => setCategory(c)} testID={`exp-cat-${c}`} />
               ))}
             </ScrollView>
           </View>
-          <Field label="Tarih (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+          <DateTimeField label="Tarih" value={date} onChange={setDate} testID="exp-date" />
           <Field label="Açıklama" value={note} onChangeText={setNote} multiline />
         </ScrollView>
       </KeyboardAvoidingView>

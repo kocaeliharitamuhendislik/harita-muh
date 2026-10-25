@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 2: tested the 4 new features (team assignment, DateTimeField picker, WhatsApp reminder, PDF/HTML report) on backend and mobile web UI (375x667). Backend: 14 new tests plus 27 regression tests, 41/41 passing. Frontend: every requested flow passed for owner and employee. Found and FIXED one CRITICAL timezone bug: Motor returned naive datetimes, which were serialized without a 'Z' suffix, so the frontend read UTC values as local time. In Europe/Istanbul a schedule picked at 10:00 showed as 07:00, and payment/expense dates entered between 00:00 and 03:00 local landed on the previous day. Fix: AsyncIOMotorClient(MONGO_URL, tz_aware=True). Re-verified in the Istanbul timezone: 10:00 and 16:45 now display correctly. No deprecated Expo packages were found (no expo-av, expo-barcode-scanner or expo-background-fetch).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "ALL endpoints returning datetimes (schedules.date, payments.date, expenses.date, created_at)", "issue": "Naive datetimes were serialized without a timezone ('2026-10-27T14:30:00'), so JS read them as local time and they shifted by -3h in Turkey. FIXED by the testing agent with tz_aware=True on the Motor client (server.py:28). Responses now carry '+00:00'.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "PATCH /api/projects/{id}", "issue": "assigned_user_ids are not checked to be existing, enabled users, so arbitrary or garbage IDs are stored."},
+      {"endpoint": "GET /api/finance/summary", "issue": "monthly_payments groups by UTC month. A payment on the 1st of a month before 03:00 Turkey time counts toward the previous month."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Calendar day strip", "issue": "testID day-${d.toISOString().slice(0,10)} is built from local midnight converted to UTC. In UTC+3 the testID is one day behind the label (day-2026-10-25 is on the 'Pzt 26' cell). This affects tests/automation only. Use local Y-M-D instead. Reference: app/(tabs)/calendar.tsx:83", "testID": "day-*", "priority": "LOW"},
+      {"component": "Calendar 14-day strip vs DateTimeField", "issue": "The picker allows any month, but the calendar only shows today plus the next 13 days. Schedules picked further ahead or in the past are saved but cannot be seen or opened from the Calendar tab. Reference: app/(tabs)/calendar.tsx:54", "testID": "add-schedule-fab", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "TeamCard chip toggle", "issue": "save() builds the new list from the 'assigned' prop of the last render, with no optimistic state and no try/catch. Tapping two chips quickly before the refetch drops the first change, and a failed PATCH fails silently. Reference: app/project/[id].tsx:402", "affected_testIDs": ["team-toggle-*"]},
+      {"flow": "ReminderCard savePhone", "issue": "There is no try/catch or loading state, so a failed PATCH gives the user no feedback. Reference: app/project/[id].tsx:438", "affected_testIDs": ["save-phone-btn"]},
+      {"flow": "Report on web", "issue": "window.open is called after awaiting 4 API calls, which is outside the user gesture. Real Safari/Chrome popup blockers may block it (Playwright does not). Open the window synchronously first, then write the HTML. Reference: src/report.ts:70", "affected_testIDs": ["report-btn"]}
+    ],
+    "design_issues": [
+      {"screen": "Project detail header", "issues": ["report-btn (PDF) is 36px tall, below the 44px touch target (xstyles.reportBtn height:36)."]},
+      {"screen": "Expense modal / Documents / Project filters", "issues": ["Raw enum keys are shown as labels: 'ulasim', 'kurum_harc', 'diger', 'Iptal'. Should be Turkish labels such as 'Ulaşım', 'Kurum Harcı', 'Diğer', 'İptal'."]},
+      {"screen": "Schedule modal", "issues": ["Project chips and the bottom tab bar items have no testIDs."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter2_team_assign.py", "/app/backend/tests/test_api.py", "/app/test_reports/pytest/pytest_iter2.xml"],
+  "action_items": [
+    "Keep the tz_aware=True fix in server.py:28 and use timezone-aware datetimes from now on.",
+    "Calendar: let the user reach dates outside the 14-day strip (month view, or jump to the picked date after saving).",
+    "TeamCard: use optimistic local state for assigned ids plus try/catch with an error message. Add error handling to ReminderCard.savePhone.",
+    "report.ts (web): open the window synchronously on tap before the awaits, to avoid popup blockers.",
+    "Raise report-btn height to 44, and use Turkish labels for the category/status enum chips.",
+    "Optional: on PATCH, validate that assigned_user_ids exist."
+  ],
+  "critical_code_review_comments": [
+    "server.py: date fields are stored as naive UTC. Fixed via tz_aware Motor client.",
+    "project/[id].tsx is 573 lines and close to the 700-line limit. Consider moving TeamCard, ReminderCard, FinanceTab and the others into src/components.",
+    "Employee report still shows client_phone. That is fine, since it is not a finance field."
+  ],
+  "updated_files": ["/app/backend/server.py (line 28: tz_aware=True)", "/app/backend/tests/test_iter2_team_assign.py (new)"],
+  "success_rate": {"backend": "100% (41/41)", "frontend": "100% of requested flows (after the timezone fix)"},
+  "seed_data_creation": "None kept. Temporary TEST_ project, schedules, payment and expense were deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with '-n 0' (pytest.ini enables xdist, and test_api.py depends on test order). Login returns access_token/user_id/role, not a nested user. Employee id is d95223f9-7be9-47af-ad3d-4292c4adceda and 'Test Projesi' is da3ee722-.... The headless browser clock is about Oct 2026. To test timezones, use page.context.browser.new_context(timezone_id='Europe/Istanbul'). wa.me redirects to api.whatsapp.com/send/?phone=90...; it is captured with context.expect_page. Modals slide in, so wait about 1s before clicking fields.",
+  "rca_of_issue": "Timezone shift: Motor without tz_aware returns naive datetime, and FastAPI serializes it as an ISO string with no offset. JS new Date('YYYY-MM-DDTHH:mm:ss') reads that as local time, so in UTC+3 every time shows 3h early, and dates entered near midnight show the previous day. Reproduced in an Istanbul-timezone browser: picked 10:00, displayed 07:00. Fix applied: tz_aware=True. Verified: 10:00 and 16:45 display correctly, and 41/41 backend tests pass."
+}
