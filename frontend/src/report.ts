@@ -4,6 +4,7 @@ import * as Sharing from "expo-sharing";
 import { api } from "@/src/api";
 import { colors } from "@/src/theme";
 import { fmtMoney, fmtDate } from "@/src/ui";
+import { DOC_TYPES, catOf, categoryLabel, docLabel, stageInfo } from "@/src/workflows";
 
 const esc = (s: any) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -35,6 +36,14 @@ export async function shareProjectReport(project: any, includeFinance: boolean, 
     throw e;
   }
   const [docs, steps, schedules, payments] = data;
+  const info = stageInfo(project);
+  const missing = DOC_TYPES[catOf(project)].filter((t) => !docs.some((d) => d.category === t.key)).map((t) => t.label);
+  const stageHtml = info ? `<h2>Süreç Durumu</h2><table><tr><th>#</th><th>Aşama</th><th>Durum</th></tr>${info.stages.map((st, i) => {
+    const done = i < info.idx || (info.done && i === info.idx);
+    const cur = i === info.idx && !info.done;
+    const b = done ? `<span class="b" style="background:${colors.success}">Tamamlandı</span>` : cur ? `<span class="b" style="background:${colors.brandPrimary}">Şu anki aşama</span>` : "-";
+    return `<tr><td>${i + 1}</td><td>${esc(st)}</td><td>${b}</td></tr>`;
+  }).join("")}</table>` : "";
   const sch = schedules.filter((s) => s.project_id === project.id);
   const badge = (s: string) => `<span class="b" style="background:${statusColor(s)}">${esc(STATUS[s] || s)}</span>`;
 
@@ -44,7 +53,7 @@ export async function shareProjectReport(project: any, includeFinance: boolean, 
       <td><small>Teklif</small><b>${fmtMoney(project.offer_amount)}</b></td>
       <td><small>Anlaşılan</small><b>${fmtMoney(project.agreed_amount)}</b></td>
       <td><small>Alınan</small><b style="color:${colors.success}">${fmtMoney(project.received_amount)}</b></td>
-      <td><small>Kalan</small><b style="color:${colors.warning}">${fmtMoney(project.remaining_amount)}</b></td>
+      <td><small>Kalan</small><b style="color:${colors.warning}">${project.payment_completed ? "Ödeme tamamlandı" : fmtMoney(project.remaining_amount)}</b></td>
     </tr></table>
     <table><tr><th>Tarih</th><th>Tutar</th><th>Açıklama</th></tr>
       ${payments.map((p) => `<tr><td>${fmtDate(p.date)}</td><td>${fmtMoney(p.amount)}</td><td>${esc(p.note)}</td></tr>`).join("") || `<tr><td colspan="3">Ödeme yok</td></tr>`}
@@ -62,10 +71,12 @@ export async function shareProjectReport(project: any, includeFinance: boolean, 
     <h1>${esc(project.name)}</h1>
     <div class="meta">Müşteri: ${esc(project.client_name) || "-"} ${project.client_phone ? "• " + esc(project.client_phone) : ""}</div>
     <div class="meta">Lokasyon: ${esc(project.location) || "-"} • Durum: ${esc(STATUS[project.status] || project.status)}</div>
+    <div class="meta">İş türü: ${esc(categoryLabel(catOf(project)))}</div>
     <div class="meta">Ekip: ${team.length ? team.map(esc).join(", ") : "-"}</div>
     <div class="meta">Rapor tarihi: ${fmtDate(new Date())}</div>
     ${finance}
-    <h2>Kurum Süreçleri</h2>
+    ${stageHtml}
+    <h2>Süreç Adımları</h2>
     <table><tr><th>Kurum</th><th>Adım</th><th>Durum</th><th>Not</th></tr>
       ${steps.map((s) => `<tr><td>${esc(s.institution)}</td><td>${esc(s.title)}</td><td>${badge(s.status)}</td><td>${esc(s.note)}</td></tr>`).join("") || `<tr><td colspan="4">Adım yok</td></tr>`}
     </table>
@@ -74,8 +85,9 @@ export async function shareProjectReport(project: any, includeFinance: boolean, 
       ${sch.map((s) => `<tr><td>${fmtDate(s.date)} ${new Date(s.date).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</td><td>${esc(s.title)}</td><td>${esc(s.location)}</td><td>${badge(s.status)}</td></tr>`).join("") || `<tr><td colspan="4">Program yok</td></tr>`}
     </table>
     <h2>Evraklar</h2>
+    <div class="meta">Eksik evraklar: ${missing.length ? missing.map(esc).join(", ") : "Yok"}</div>
     <table><tr><th>Dosya</th><th>Kategori</th><th>Yükleme</th></tr>
-      ${docs.map((d) => `<tr><td>${esc(d.name)}</td><td>${esc(d.category)}</td><td>${fmtDate(d.created_at)}</td></tr>`).join("") || `<tr><td colspan="3">Evrak yok</td></tr>`}
+      ${docs.map((d) => `<tr><td>${esc(d.name)}</td><td>${esc(docLabel(d.category))}</td><td>${fmtDate(d.created_at)}</td></tr>`).join("") || `<tr><td colspan="3">Evrak yok</td></tr>`}
     </table>
   </body></html>`;
 

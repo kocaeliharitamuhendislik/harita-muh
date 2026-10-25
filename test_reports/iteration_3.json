@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 full test (backend + mobile web 390x844). Backend: 51/51 pytest pass (41 previous + 10 new in test_iter3_stages_finance.py covering category/payment_completed, stages owner/employee/400/404, planned payments CRUD+pay+403, finance report, PATCH toggles, employee schedules). Frontend: all requested flows work: Projeler segments with counts + filtering, stage 'n/N label' on cards, no money on projects list/detail (owner+employee); create job with category chips, Bitmiş İş -> Ödeme Tamamlandı toggle, shows 'Ödeme tamamlandı' in Finans > İş Bakiyeleri; Evraklar checklist per category (7 kadastro / 7 belediye types, x/N tamam), src-file upload turns type checked; Süreç stepper save moves stage + history note; Diğer shows free-form steps; Arazi schedule add/edit(status)/double-tap delete; Takvim add/toggle/edit; project-finance KPIs, amounts save, planned + payment add, completed toggle (remaining 0 / restore), WhatsApp + PDF buttons; Finans Özet KPIs, upcoming 'Tahsil Edildi' (removes row, KPI updates), income-expense monthly/yearly + year nav; Giderler add/double-tap delete. Employee: sees only assigned jobs, no FAB/Finans tab/finance btn, /project-finance and /finance redirect to /projects, can update stage and add/edit schedules. Only minor issues found (Turkish uppercase İ, small touch targets, a few English 404 details, logic nits).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/schedules/{sid}/status", "issue": "No scope check: any employee can change status of ANY schedule (not only assigned/created ones); also returns ok for non-existent id instead of 404. server.py:615-620"},
+      {"endpoint": "PUT /api/schedules/{sid}, PUT /api/steps/{sid}, documents", "issue": "HTTPException(404) raised without detail -> frontend shows English 'Not Found'. server.py:612,653,665,773,786. Add Turkish detail e.g. 'Kayıt bulunamadı'"},
+      {"endpoint": "POST /api/planned-payments/{id}/pay", "issue": "find_one then update_one is not atomic; two concurrent taps can create 2 payments. Use find_one_and_update({id, status:'bekliyor'} -> odendi) first, then insert payment"},
+      {"endpoint": "DELETE /api/planned-payments/{id}, DELETE /api/expenses/{id}", "issue": "Return 200 ok for non-existent id (no 404)"},
+      {"endpoint": "PATCH /api/projects/{id}", "issue": "Sending category equal to current value still resets stage_index to 0 (should only reset when category actually changes)"},
+      {"endpoint": "POST /api/projects", "issue": "Finished job (status 'bitti') of kadastro/belediye category is created at stage 0 'Eksik evrak bekleniyor' (1/6) instead of last stage 'İşlem tamamlandı' — card/Süreç show a finished job as waiting for missing docs"},
+      {"endpoint": "POST /api/schedules", "issue": "Employee can create a schedule with project_id of a project they are not assigned to (no scope check)"},
+      {"endpoint": "data", "issue": "Legacy projects ('151/4 Acısu...', 'Test Projesi') have no category/stage_index field in DB (frontend falls back to diger). Consider a startup migration setting category='diger', stage_index=0"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Uppercase labels", "issue": "textTransform:'uppercase' produces wrong Turkish casing: 'GIDER', 'GELIR', 'DIĞER İŞLER' instead of 'GİDER', 'GELİR', 'DİĞER İŞLER'. Files: finance.tsx:201, finance-parts.tsx:208,218, projects.tsx:312,324, project/[id].tsx:612,630,635, project-finance/[id].tsx:297, calendar.tsx:182. Fix: write labels with toLocaleUpperCase('tr-TR') and drop textTransform", "testID": "kpi-expense, income-expense, project-card-*", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Project detail", "issues": ["back-btn touch target 32x34 (<44)", "tab-evraklar/tab-arazi/tab-surec pills 36px high (<44)", "step delete 'x' icon looks <44"]},
+      {"screen": "Projeler", "issues": ["seg-* 38px and filter-* chips 36px high (<44 touch target)"]},
+      {"screen": "Create job modal (web)", "issue_note": "presentationStyle='pageSheet' modal renders as partial sheet on web; lower fields (input-finished, Kaydet) initially outside viewport, required scroll — fine on native", "issues": ["pageSheet modal partially offscreen on web preview"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter3_stages_finance.py", "/app/backend/tests/helper_seed_ui.py", "/app/test_reports/pytest/pytest_iter3.xml"],
+  "action_items": [
+    "Fix Turkish uppercase casing (İ) by removing textTransform uppercase and using toLocaleUpperCase('tr-TR') on label strings",
+    "Add scope check + 404 to POST /api/schedules/{sid}/status for employees",
+    "Add Turkish detail to bare HTTPException(404) calls",
+    "Make planned payment pay atomic (find_one_and_update)",
+    "When creating a finished (bitti) kadastro/belediye job, set stage_index to last stage; only reset stage on PATCH when category actually changes",
+    "Increase touch targets (back-btn, tab pills, seg/filter chips) to >=44px",
+    "Optionally remove leftover test user 'UI Emp' (uitest_9d59s6@haritapro.com) created in a previous iteration — it shows in Atanan Çalışanlar chips"
+  ],
+  "critical_code_review_comments": [
+    "Project detail report (report-btn) correctly uses includeFinance=false; finance report only from project-finance page",
+    "project/[id].tsx is 662 lines - near the 700-line limit; consider splitting tabs into components",
+    "Employee /finance and /project-finance/{id} correctly redirect; backend _strip_finance removes all finance fields for employees"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter3_stages_finance.py", "/app/backend/tests/helper_seed_ui.py"],
+  "success_rate": {"backend": "100% (51/51)", "frontend": "100% of requested flows functional; minor UI/casing issues"},
+  "seed_data_creation": "None persisted. TEST_ projects/schedules/expenses created during tests were deleted (helper_seed_ui.py cleanup). Seed data verified intact.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest -n 0 on /app/backend/tests. Create-job modal on web needs scroll_into_view before clicking lower fields. Expense delete and schedule delete are double-tap confirm ('Sil?' / 'Silmek için tekrar dokunun'). helper_seed_ui.py create|show|cleanup manages TEST_ data.",
+  "rca_of_issue": ""
+}

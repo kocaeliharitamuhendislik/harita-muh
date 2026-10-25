@@ -1,15 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
-import { DateTimeField } from "@/src/components/date-time-field";
-import { AssigneeChips, useTeam } from "@/src/components/team";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useState, useCallback } from "react";
+import { ScheduleModal } from "@/src/components/schedule-modal";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
-import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
-import { Field } from "./projects";
-import { Chip, fmtDate } from "@/src/ui";
 
 type Schedule = {
   id: string;
@@ -33,11 +29,11 @@ function sameDay(a: Date, b: Date) { return startOfDay(a).getTime() === startOfD
 
 export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
   const [items, setItems] = useState<Schedule[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<Schedule | null>(null);
   const [selected, setSelected] = useState<Date>(startOfDay(new Date()));
   const [stripStart, setStripStart] = useState<Date>(startOfDay(new Date()));
   const shiftStrip = (n: number) => {
@@ -125,7 +121,7 @@ export default function CalendarScreen() {
               <Pressable
                 key={it.id}
                 testID={`schedule-${it.id}`}
-                onPress={() => toggleStatus(it.id, it.status)}
+                onPress={() => { setEditing(it); setShowCreate(true); }}
                 style={[styles.item, done && { opacity: 0.6 }]}
               >
                 <View style={styles.timeCol}>
@@ -142,7 +138,9 @@ export default function CalendarScreen() {
                     </View>
                   )}
                 </View>
-                <Ionicons name={done ? "checkmark-circle" : "ellipse-outline"} size={28} color={done ? colors.success : colors.border} />
+                <Pressable testID={`toggle-schedule-${it.id}`} onPress={() => toggleStatus(it.id, it.status)} hitSlop={8} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name={done ? "checkmark-circle" : "ellipse-outline"} size={28} color={done ? colors.success : colors.borderStrong} />
+                </Pressable>
               </Pressable>
             );
           })
@@ -151,99 +149,21 @@ export default function CalendarScreen() {
 
       <Pressable
         testID="add-schedule-fab"
-        onPress={() => setShowCreate(true)}
+        onPress={() => { setEditing(null); setShowCreate(true); }}
         style={[styles.fab, { bottom: spacing.lg }]}
       >
         <Ionicons name="add" size={28} color={colors.onBrandPrimary} />
       </Pressable>
 
-      <CreateScheduleModal
+      <ScheduleModal
         visible={showCreate}
         onClose={() => setShowCreate(false)}
-        onCreated={(d?: Date) => { load(); if (d) jumpTo(d); }}
+        onSaved={(d?: Date) => { load(); if (d) jumpTo(d); }}
         projects={projects}
         defaultDate={selected}
+        schedule={editing}
       />
     </View>
-  );
-}
-
-function CreateScheduleModal({ visible, onClose, onCreated, projects, defaultDate }: any) {
-  const insets = useSafeAreaInsets();
-  const [title, setTitle] = useState("");
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const { user } = useAuth();
-  const isOwner = user?.role === "owner";
-  const team = useTeam();
-  const at9 = (d: Date) => { const n = new Date(d); n.setHours(9, 0, 0, 0); return n; };
-  const [when, setWhen] = useState<Date>(at9(defaultDate));
-  const [assignees, setAssignees] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (visible) { setWhen(at9(defaultDate)); setAssignees([]); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-  const [duration, setDuration] = useState("2");
-  const [location, setLocation] = useState("");
-  const [note, setNote] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!title.trim()) { setErr("Başlık gerekli"); return; }
-    setSaving(true);
-    try {
-      const iso = when.toISOString();
-      await api("/schedules", {
-        method: "POST",
-        body: JSON.stringify({
-          project_id: projectId, title: title.trim(), date: iso,
-          duration_hours: parseFloat(duration) || 1, location: location.trim(), note: note.trim(),
-          assigned_user_ids: assignees,
-        }),
-      });
-      onClose();
-      onCreated(when);
-      setTitle(""); setLocation(""); setNote(""); setErr(null);
-    } catch (e: any) { setErr(e?.message || "Hata"); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.md }]}>
-          <Pressable onPress={onClose}><Text style={{ color: colors.muted }}>İptal</Text></Pressable>
-          <Text style={styles.modalTitle}>Yeni Program</Text>
-          <Pressable onPress={save} disabled={saving} testID="save-schedule"><Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{saving ? "..." : "Kaydet"}</Text></Pressable>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
-          <Field label="Başlık *" value={title} onChangeText={setTitle} placeholder="Örn: Arazi ölçüm" testID="sch-title" />
-          <View>
-            <Text style={{ fontSize: 13, color: colors.onSurfaceTertiary, fontWeight: "600", marginBottom: spacing.xs }}>Proje</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 2 }}>
-              <Chip label="Yok" active={!projectId} onPress={() => setProjectId(null)} />
-              {projects.map((p: any) => (
-                <Chip key={p.id} label={p.name} active={projectId === p.id} onPress={() => setProjectId(p.id)} />
-              ))}
-            </ScrollView>
-          </View>
-          <DateTimeField label="Tarih ve Saat" value={when} onChange={setWhen} withTime testID="sch-datetime" />
-          {isOwner && (
-            <View>
-              <AssigneeChips team={team} selected={assignees} onChange={setAssignees} testIDPrefix="sch-assignee" />
-              {projectId && assignees.length === 0 && (
-                <Text style={{ color: colors.muted, fontSize: 12, marginTop: spacing.xs }}>Seçilmezse projenin ekibi atanır.</Text>
-              )}
-            </View>
-          )}
-          <Field label="Süre (saat)" value={duration} onChangeText={setDuration} keyboardType="numeric" />
-          <Field label="Lokasyon" value={location} onChangeText={setLocation} placeholder="Adres / parsel" />
-          <Field label="Not" value={note} onChangeText={setNote} multiline />
-          {err && <Text style={{ color: colors.error }}>{err}</Text>}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Modal>
   );
 }
 
@@ -259,7 +179,7 @@ const styles = StyleSheet.create({
     width: 60, height: 76, borderRadius: radius.md, borderWidth: 1,
     alignItems: "center", justifyContent: "center", gap: 2, flexShrink: 0,
   },
-  dayWd: { fontSize: 11, fontWeight: "600", textTransform: "uppercase" },
+  dayWd: { fontSize: 11, fontWeight: "600" },
   dayNum: { fontSize: 20, fontWeight: "700" },
   dayMo: { fontSize: 10 },
   dot: { width: 4, height: 4, borderRadius: 2, position: "absolute", bottom: 6 },

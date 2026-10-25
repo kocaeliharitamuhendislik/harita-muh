@@ -131,11 +131,26 @@ class ProjectIn(BaseModel):
     location: str = ""
     description: str = ""
     status: str = "aktif"  # aktif, bitti, iptal
+    category: Literal["kadastro", "belediye", "diger"] = "diger"
+    payment_completed: bool = False
     offer_amount: float = 0
     agreed_amount: float = 0
     assigned_user_ids: List[str] = []
 
+STAGE_COUNTS = {"kadastro": 6, "belediye": 7}
+
+class StageIn(BaseModel):
+    stage_index: int
+    note: str = ""
+
+class PlannedIn(BaseModel):
+    amount: float = Field(gt=0)
+    due_date: datetime
+    note: str = ""
+
 class ProjectPatch(BaseModel):
+    category: Optional[Literal["kadastro", "belediye", "diger"]] = None
+    payment_completed: Optional[bool] = None
     name: Optional[str] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
@@ -182,10 +197,10 @@ class ScheduleIn(BaseModel):
     location: str = ""
     note: str = ""
     assigned_user_ids: List[str] = []
+    status: Literal["planlandi", "tamamlandi", "iptal"] = "planlandi"
 
 class ScheduleOut(ScheduleIn):
     id: str
-    status: str = "planlandi"  # planlandi, tamamlandi, iptal
     created_at: datetime
     created_by: str
 
@@ -239,6 +254,10 @@ async def startup():
             "created_at": datetime.now(timezone.utc),
         })
         log.info(f"Seeded owner: {owner_email}")
+
+    # Older jobs created before categories/stages existed
+    await db.projects.update_many({"category": {"$exists": False}}, {"$set": {"category": "diger"}})
+    await db.projects.update_many({"stage_index": {"$exists": False}}, {"$set": {"stage_index": 0, "stage_history": []}})
 
     try:
         await run_in_threadpool(init_storage)
@@ -308,7 +327,7 @@ async def _recalc_project(project_id: str):
     received = agg[0]["total"] if agg else 0
     proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if proj:
-        remaining = max(0.0, (proj.get("agreed_amount") or 0) - received)
+        remaining = 0.0 if proj.get("payment_completed") else max(0.0, (proj.get("agreed_amount") or 0) - received)
         await db.projects.update_one({"id": project_id},
             {"$set": {"received_amount": received, "remaining_amount": remaining}})
 
@@ -320,7 +339,7 @@ def _project_scope(user) -> dict:
 
 def _strip_finance(proj: dict, user) -> dict:
     if user["role"] != "owner":
-        for k in ("offer_amount", "agreed_amount", "received_amount", "remaining_amount"):
+        for k in ("offer_amount", "agreed_amount", "received_amount", "remaining_amount", "payment_completed"):
             proj.pop(k, None)
     return proj
 
@@ -337,13 +356,100 @@ async def create_project(body: ProjectIn, owner=Depends(require_owner)):
     doc.update({
         "id": str(uuid.uuid4()),
         "received_amount": 0,
-        "remaining_amount": body.agreed_amount,
+        "remaining_amount": 0 if body.payment_completed else body.agreed_amount,
+        "stage_index": (STAGE_COUNTS[body.category] - 1) if body.status == "bitti" and body.category in STAGE_COUNTS else 0,
+        "stage_history": [],
         "created_at": now,
         "created_by": owner["id"],
     })
     await db.projects.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+@api.post("/projects/{pid}/stage")
+async def set_stage(pid: str, body: StageIn, user=Depends(current_user)):
+    proj = await db.projects.find_one({"id": pid, **_project_scope(user)}, {"_id": 0})
+    if not proj:
+        raise HTTPException(404, "Proje bulunamadı")
+    n = STAGE_COUNTS.get(proj.get("category"))
+    if not n:
+        raise HTTPException(400, "Bu iş türünde süreç aşaması yok")
+    if not 0 <= body.stage_index < n:
+        raise HTTPException(400, "Geçersiz aşama")
+    entry = {"stage_index": body.stage_index, "note": body.note.strip(), "by": user["name"],
+             "at": datetime.now(timezone.utc)}
+    await db.projects.update_one({"id": pid}, {"$set": {"stage_index": body.stage_index},
+                                              "$push": {"stage_history": entry}})
+    doc = await db.projects.find_one({"id": pid}, {"_id": 0})
+    return _strip_finance(doc, user)
+
+# ---------- Planned (upcoming) payments, owner only ----------
+@api.get("/planned-payments")
+async def list_planned(project_id: Optional[str] = None, owner=Depends(require_owner)):
+    q = {"project_id": project_id} if project_id else {}
+    docs = await db.planned_payments.find(q, {"_id": 0}).sort("due_date", 1).to_list(1000)
+    names = {p["id"]: p["name"] for p in await db.projects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(2000)}
+    for d in docs:
+        d["project_name"] = names.get(d["project_id"], "")
+    return docs
+
+@api.post("/projects/{pid}/planned-payments")
+async def add_planned(pid: str, body: PlannedIn, owner=Depends(require_owner)):
+    if not await db.projects.find_one({"id": pid}, {"_id": 0, "id": 1}):
+        raise HTTPException(404, "Proje bulunamadı")
+    doc = body.dict()
+    doc.update({"id": str(uuid.uuid4()), "project_id": pid, "status": "bekliyor",
+                "created_at": datetime.now(timezone.utc)})
+    await db.planned_payments.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.post("/planned-payments/{ppid}/pay")
+async def pay_planned(ppid: str, owner=Depends(require_owner)):
+    now = datetime.now(timezone.utc)
+    pay_id = str(uuid.uuid4())
+    # Atomic claim: only one request can flip bekliyor -> odendi
+    pp = await db.planned_payments.find_one_and_update(
+        {"id": ppid, "status": "bekliyor"},
+        {"$set": {"status": "odendi", "paid_at": now, "payment_id": pay_id}},
+        projection={"_id": 0},
+    )
+    if not pp:
+        raise HTTPException(404, "Bekleyen ödeme bulunamadı")
+    pay = {"id": pay_id, "project_id": pp["project_id"], "amount": pp["amount"], "date": now,
+           "note": pp.get("note") or "Planlı ödeme", "created_at": now}
+    await db.payments.insert_one(pay)
+    await _recalc_project(pp["project_id"])
+    return {"ok": True}
+
+@api.delete("/planned-payments/{ppid}")
+async def delete_planned(ppid: str, owner=Depends(require_owner)):
+    r = await db.planned_payments.delete_one({"id": ppid})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Planlı ödeme bulunamadı")
+    return {"ok": True}
+
+@api.get("/finance/report")
+async def finance_report(year: int, owner=Depends(require_owner)):
+    tz = "Europe/Istanbul"
+    async def grouped(coll, fmt):
+        rows = await db[coll].aggregate([
+            {"$group": {"_id": {"$dateToString": {"format": fmt, "date": "$date", "timezone": tz}},
+                        "total": {"$sum": "$amount"}}},
+        ]).to_list(500)
+        return {r["_id"]: r["total"] for r in rows if r["_id"]}
+    inc_m, exp_m = await grouped("payments", "%Y-%m"), await grouped("expenses", "%Y-%m")
+    inc_y, exp_y = await grouped("payments", "%Y"), await grouped("expenses", "%Y")
+    months = [{"month": m, "income": inc_m.get(f"{year}-{m:02d}", 0), "expense": exp_m.get(f"{year}-{m:02d}", 0)}
+              for m in range(1, 13)]
+    years = sorted(set(inc_y) | set(exp_y) | {str(year)}, reverse=True)
+    return {
+        "year": year,
+        "months": months,
+        "year_income": sum(m["income"] for m in months),
+        "year_expense": sum(m["expense"] for m in months),
+        "years": [{"year": int(y), "income": inc_y.get(y, 0), "expense": exp_y.get(y, 0)} for y in years],
+    }
 
 @api.get("/projects/{pid}")
 async def get_project(pid: str, user=Depends(current_user)):
@@ -374,6 +480,10 @@ async def patch_project(pid: str, body: ProjectPatch, owner=Depends(require_owne
         if found != len(ids):
             raise HTTPException(400, "Geçersiz çalışan seçimi")
         update["assigned_user_ids"] = ids
+    if "category" in update:
+        cur = await db.projects.find_one({"id": pid}, {"_id": 0, "category": 1})
+        if cur and cur.get("category") != update["category"]:
+            update["stage_index"] = 0
     r = await db.projects.update_one({"id": pid}, {"$set": update})
     if r.matched_count == 0:
         raise HTTPException(404, "Proje bulunamadı")
@@ -392,6 +502,7 @@ async def delete_project(pid: str, owner=Depends(require_owner)):
     await db.schedules.delete_many({"project_id": pid})
     await db.steps.delete_many({"project_id": pid})
     await db.documents.delete_many({"project_id": pid})
+    await db.planned_payments.delete_many({"project_id": pid})
     return {"ok": True}
 
 # ---------- Payments (owner only) ----------
@@ -438,7 +549,9 @@ async def add_expense(body: ExpenseIn, owner=Depends(require_owner)):
 
 @api.delete("/expenses/{eid}")
 async def delete_expense(eid: str, owner=Depends(require_owner)):
-    await db.expenses.delete_one({"id": eid})
+    r = await db.expenses.delete_one({"id": eid})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Gider bulunamadı")
     return {"ok": True}
 
 # ---------- Finance Summary ----------
@@ -489,13 +602,15 @@ async def list_schedules(user=Depends(current_user)):
 @api.post("/schedules")
 async def create_schedule(body: ScheduleIn, user=Depends(current_user)):
     doc = body.dict()
+    if body.project_id and user["role"] != "owner":
+        if not await db.projects.find_one({"id": body.project_id, "assigned_user_ids": user["id"]}, {"_id": 0, "id": 1}):
+            raise HTTPException(403, "Bu işe atanmadınız")
     if body.project_id and not body.assigned_user_ids:
         proj = await db.projects.find_one({"id": body.project_id}, {"_id": 0, "assigned_user_ids": 1})
         if proj:
             doc["assigned_user_ids"] = proj.get("assigned_user_ids") or []
     doc.update({
         "id": str(uuid.uuid4()),
-        "status": "planlandi",
         "created_at": datetime.now(timezone.utc),
         "created_by": user["id"],
     })
@@ -512,19 +627,29 @@ async def update_schedule(sid: str, body: ScheduleIn, user=Depends(current_user)
     await db.schedules.update_one({"id": sid}, {"$set": body.dict()})
     doc = await db.schedules.find_one({"id": sid}, {"_id": 0})
     if not doc:
-        raise HTTPException(404)
+        raise HTTPException(404, "Kayıt bulunamadı")
     return doc
 
 @api.post("/schedules/{sid}/status")
 async def set_schedule_status(sid: str, status: str = Form(...), user=Depends(current_user)):
     if status not in ("planlandi", "tamamlandi", "iptal"):
         raise HTTPException(400, "Geçersiz durum")
-    await db.schedules.update_one({"id": sid}, {"$set": {"status": status}})
+    q = {"id": sid}
+    if user["role"] != "owner":
+        q["$or"] = [{"assigned_user_ids": user["id"]}, {"created_by": user["id"]}]
+    r = await db.schedules.update_one(q, {"$set": {"status": status}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Program bulunamadı")
     return {"ok": True}
 
 @api.delete("/schedules/{sid}")
-async def delete_schedule(sid: str, owner=Depends(require_owner)):
-    await db.schedules.delete_one({"id": sid})
+async def delete_schedule(sid: str, user=Depends(current_user)):
+    q = {"id": sid}
+    if user["role"] != "owner":
+        q["$or"] = [{"assigned_user_ids": user["id"]}, {"created_by": user["id"]}]
+    r = await db.schedules.delete_one(q)
+    if r.deleted_count == 0:
+        raise HTTPException(403, "Erişim yok")
     return {"ok": True}
 
 # ---------- Institution process steps ----------
@@ -548,7 +673,7 @@ async def add_step(pid: str, body: StepIn, user=Depends(current_user)):
 async def _check_step_access(sid: str, user):
     step = await db.steps.find_one({"id": sid}, {"_id": 0, "project_id": 1})
     if not step:
-        raise HTTPException(404)
+        raise HTTPException(404, "Kayıt bulunamadı")
     if user["role"] != "owner":
         proj = await db.projects.find_one({"id": step["project_id"], "assigned_user_ids": user["id"]}, {"_id": 0, "id": 1})
         if not proj:
@@ -560,7 +685,7 @@ async def update_step(sid: str, body: StepIn, user=Depends(current_user)):
     await db.steps.update_one({"id": sid}, {"$set": body.dict()})
     doc = await db.steps.find_one({"id": sid}, {"_id": 0})
     if not doc:
-        raise HTTPException(404)
+        raise HTTPException(404, "Kayıt bulunamadı")
     return doc
 
 @api.delete("/steps/{sid}")
@@ -668,7 +793,7 @@ async def download_document(
     role = user["role"]
     doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
-        raise HTTPException(404)
+        raise HTTPException(404, "Kayıt bulunamadı")
     await _authorize_file_access(doc, uid, role)
     try:
         content, ctype = await run_in_threadpool(get_object, doc["storage_path"])
@@ -681,7 +806,7 @@ async def download_document(
 async def delete_document(doc_id: str, user=Depends(current_user)):
     doc = await db.documents.find_one({"id": doc_id})
     if not doc:
-        raise HTTPException(404)
+        raise HTTPException(404, "Kayıt bulunamadı")
     if user["role"] != "owner" and doc["uploaded_by"] != user["id"]:
         raise HTTPException(403, "Erişim yok")
     await db.documents.delete_one({"id": doc_id})

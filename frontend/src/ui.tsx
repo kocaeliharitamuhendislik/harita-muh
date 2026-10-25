@@ -69,7 +69,44 @@ export function StatusDot({ status }: { status: string }) {
   return <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />;
 }
 
+export function SegmentedControl({
+  items, value, onChange, testIDPrefix,
+}: {
+  items: { key: string; label: string }[];
+  value: string;
+  onChange: (k: string) => void;
+  testIDPrefix: string;
+}) {
+  return (
+    <View style={styles.segWrap}>
+      {items.map((it) => {
+        const active = it.key === value;
+        return (
+          <Pressable
+            key={it.key}
+            testID={`${testIDPrefix}-${it.key}`}
+            onPress={() => onChange(it.key)}
+            style={[styles.segItem, active && { backgroundColor: colors.surfaceSecondary, ...styles.segShadow }]}
+          >
+            <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "600", color: active ? colors.brandPrimary : colors.onSurfaceTertiary }}>
+              {it.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export const styles = StyleSheet.create({
+  segWrap: {
+    flexDirection: "row", backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
+    padding: 3, marginHorizontal: spacing.lg, height: 44,
+  },
+  segItem: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: radius.md - 2, paddingHorizontal: 4 },
+  segShadow: {
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1,
+  },
   btn: {
     height: 48,
     borderRadius: radius.md,
@@ -107,7 +144,7 @@ export const LABELS: Record<string, string> = {
   hepsi: "Hepsi", aktif: "Aktif", bitti: "Bitti", iptal: "İptal",
   genel: "Genel", arazi: "Arazi", ulasim: "Ulaşım", kurum_harc: "Kurum Harcı", malzeme: "Malzeme",
   tapu: "Tapu", imar: "İmar", kroki: "Kroki", foto: "Fotoğraf", diger: "Diğer",
-  finans: "Finans", evraklar: "Evraklar", kurum: "Kurum",
+  finans: "Finans", evraklar: "Evraklar", kurum: "Kurum", surec: "Süreç",
   beklemede: "Beklemede", onaylandi: "Onaylandı", reddedildi: "Reddedildi",
   planlandi: "Planlandı", tamamlandi: "Tamamlandı",
 };

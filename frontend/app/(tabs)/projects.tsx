@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Modal, TextInput, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,8 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth-context";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Button, Card, Chip, fmtMoney, label } from "@/src/ui";
+import { Chip, label, SegmentedControl } from "@/src/ui";
 import { AssigneeChips, useTeam } from "@/src/components/team";
+import { PROJECT_CATEGORIES, catOf, stageInfo, ProjectCategory } from "@/src/workflows";
 
 type Project = {
   id: string;
@@ -15,10 +16,8 @@ type Project = {
   client_name: string;
   location: string;
   status: string;
-  offer_amount?: number;
-  agreed_amount?: number;
-  received_amount?: number;
-  remaining_amount?: number;
+  category?: string;
+  stage_index?: number;
   assigned_user_ids?: string[];
 };
 
@@ -33,6 +32,7 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("hepsi");
+  const [seg, setSeg] = useState<string>("tumu");
   const [showCreate, setShowCreate] = useState(false);
 
   const load = useCallback(async () => {
@@ -49,7 +49,13 @@ export default function Projects() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filtered = items.filter((p) => filter === "hepsi" || p.status === filter);
+  const filtered = items.filter((p) =>
+    (seg === "tumu" || catOf(p) === seg) && (filter === "hepsi" || p.status === filter));
+  const countOf = (k: string) => items.filter((p) => k === "tumu" || catOf(p) === k).length;
+  const segments = [
+    { key: "tumu", label: `Tüm İşler (${countOf("tumu")})` },
+    ...PROJECT_CATEGORIES.map((c) => ({ key: c.key, label: `${c.short} (${countOf(c.key)})` })),
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -62,6 +68,8 @@ export default function Projects() {
           <Text style={styles.badgeText}>{isOwner ? "Sahip" : "Çalışan"}</Text>
         </View>
       </View>
+
+      <SegmentedControl items={segments} value={seg} onChange={setSeg} testIDPrefix="seg" />
 
       <ScrollView
         horizontal
@@ -109,19 +117,23 @@ export default function Projects() {
                 <Text style={styles.meta} numberOfLines={1}>{item.location}</Text>
               </View>
             )}
-            {isOwner && (
-              <View style={styles.financeRow}>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Anlaşılan</Text>
-                  <Text style={styles.financeValue}>{fmtMoney(item.agreed_amount)}</Text>
-                </View>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Kalan</Text>
-                  <Text style={[styles.financeValue, { color: (item.remaining_amount || 0) > 0 ? colors.warning : colors.success }]}>
-                    {fmtMoney(item.remaining_amount)}
+            {(() => {
+              const info = stageInfo(item);
+              if (!info) return null;
+              return (
+                <View style={styles.stageBox} testID={`project-stage-${item.id}`}>
+                  <Text style={styles.stageLabel} numberOfLines={2}>
+                    <Text style={{ color: info.done ? colors.success : colors.brandPrimary, fontWeight: "700" }}>{info.idx + 1}/{info.stages.length} </Text>
+                    {info.label}
                   </Text>
+                  <View style={styles.stageTrack}>
+                    <View style={[styles.stageFill, { width: `${((info.idx + 1) / info.stages.length) * 100}%`, backgroundColor: info.done ? colors.success : colors.brandPrimary }]} />
+                  </View>
                 </View>
-              </View>
+              );
+            })()}
+            {seg === "tumu" && (
+              <Text style={styles.catTag}>{PROJECT_CATEGORIES.find((c) => c.key === catOf(item))?.label}</Text>
             )}
           </Pressable>
         )}
@@ -137,7 +149,12 @@ export default function Projects() {
         </Pressable>
       )}
 
-      <CreateProjectModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={load} />
+      <CreateProjectModal
+        visible={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={load}
+        defaultCategory={(seg === "tumu" ? "kadastro" : seg) as ProjectCategory}
+      />
     </View>
   );
 }
@@ -148,32 +165,38 @@ function pillColor(status: string) {
   return { backgroundColor: "#FEE2E2" };
 }
 
-function CreateProjectModal({ visible, onClose, onCreated }: { visible: boolean; onClose: () => void; onCreated: () => void }) {
+function CreateProjectModal({ visible, onClose, onCreated, defaultCategory }: { visible: boolean; onClose: () => void; onCreated: () => void; defaultCategory: ProjectCategory }) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [location, setLocation] = useState("");
   const [desc, setDesc] = useState("");
-  const [offer, setOffer] = useState("");
-  const [agreed, setAgreed] = useState("");
+  const [category, setCategory] = useState<ProjectCategory>(defaultCategory);
+  const [finished, setFinished] = useState(false);
+  const [paid, setPaid] = useState(false);
   const [phone, setPhone] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
   const team = useTeam();
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const reset = () => { setName(""); setClientName(""); setLocation(""); setDesc(""); setOffer(""); setAgreed(""); setPhone(""); setAssignees([]); setErr(null); };
+  useEffect(() => {
+    if (visible) setCategory(defaultCategory);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const reset = () => { setName(""); setClientName(""); setLocation(""); setDesc(""); setFinished(false); setPaid(false); setPhone(""); setAssignees([]); setErr(null); };
 
   const save = async () => {
-    if (!name.trim()) { setErr("Proje adı gerekli"); return; }
+    if (!name.trim()) { setErr("İş adı gerekli"); return; }
     setSaving(true);
     try {
       await api("/projects", {
         method: "POST",
         body: JSON.stringify({
           name: name.trim(), client_name: clientName.trim(), location: location.trim(),
-          description: desc.trim(), status: "aktif", client_phone: phone.trim(),
-          offer_amount: parseFloat(offer) || 0, agreed_amount: parseFloat(agreed) || 0,
+          description: desc.trim(), status: finished ? "bitti" : "aktif", client_phone: phone.trim(),
+          category, payment_completed: finished && paid,
           assigned_user_ids: assignees,
         }),
       });
@@ -192,19 +215,41 @@ function CreateProjectModal({ visible, onClose, onCreated }: { visible: boolean;
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.md }]}>
           <Pressable testID="create-project-close" onPress={onClose}><Text style={styles.modalCancel}>İptal</Text></Pressable>
-          <Text style={styles.modalTitle}>Yeni Proje</Text>
+          <Text style={styles.modalTitle}>Yeni İş</Text>
           <Pressable testID="create-project-save" onPress={save} disabled={saving}>
             <Text style={[styles.modalSave, { opacity: saving ? 0.5 : 1 }]}>{saving ? "..." : "Kaydet"}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
-          <Field label="Proje Adı *" value={name} onChangeText={setName} placeholder="Örn: Tapu Aplikasyonu" testID="input-name" />
+          <View>
+            <Text style={fstyles.label}>İş Türü</Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+              {PROJECT_CATEGORIES.map((c) => (
+                <Chip key={c.key} label={c.label} active={category === c.key} onPress={() => setCategory(c.key)} testID={`input-category-${c.key}`} />
+              ))}
+            </View>
+          </View>
+          <Field label="İş Adı *" value={name} onChangeText={setName} placeholder="Örn: 123 ada 4 parsel aplikasyon" testID="input-name" />
           <Field label="Müşteri" value={clientName} onChangeText={setClientName} placeholder="Müşteri adı" testID="input-client" />
           <Field label="Müşteri Telefonu" value={phone} onChangeText={setPhone} placeholder="05xx xxx xx xx" keyboardType="phone-pad" testID="input-phone" />
-          <Field label="Lokasyon" value={location} onChangeText={setLocation} placeholder="İl / İlçe / Mahalle" testID="input-location" />
+          <Field label="Konum" value={location} onChangeText={setLocation} placeholder="İl / İlçe / Mahalle" testID="input-location" />
           <Field label="Açıklama" value={desc} onChangeText={setDesc} placeholder="Not" multiline testID="input-desc" />
-          <Field label="Teklif Tutarı (₺)" value={offer} onChangeText={setOffer} keyboardType="numeric" testID="input-offer" />
-          <Field label="Anlaşılan Tutar (₺)" value={agreed} onChangeText={setAgreed} keyboardType="numeric" testID="input-agreed" />
+          <View>
+            <Text style={fstyles.label}>İşin Durumu</Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <Chip label="Devam Eden İş" active={!finished} onPress={() => { setFinished(false); setPaid(false); }} testID="input-ongoing" />
+              <Chip label="Bitmiş İş" active={finished} onPress={() => setFinished(true)} testID="input-finished" />
+            </View>
+          </View>
+          {finished && (
+            <Pressable testID="input-payment-completed" onPress={() => setPaid((v) => !v)} style={[styles.paidBtn, paid && { backgroundColor: colors.success, borderColor: colors.success }]}>
+              <Ionicons name={paid ? "checkmark-circle" : "ellipse-outline"} size={22} color={paid ? colors.onSuccess : colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: "700", color: paid ? colors.onSuccess : colors.success }}>Ödeme Tamamlandı</Text>
+                <Text style={{ fontSize: 12, color: paid ? colors.onSuccess : colors.muted }}>Tutar girmeden, ödemesi alınmış olarak kaydedilir</Text>
+              </View>
+            </Pressable>
+          )}
           <AssigneeChips team={team} selected={assignees} onChange={setAssignees} testIDPrefix="proj-assignee" />
           {err && <Text style={{ color: colors.error }}>{err}</Text>}
         </ScrollView>
@@ -264,7 +309,7 @@ const styles = StyleSheet.create({
   meta: { color: colors.muted, fontSize: 13, flex: 1 },
   financeRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
   financeBox: { flex: 1 },
-  financeLabel: { fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase" },
+  financeLabel: { fontSize: 11, color: colors.muted, fontWeight: "600" },
   financeValue: { fontSize: 16, fontWeight: "700", color: colors.onSurface, marginTop: 2 },
   fab: {
     position: "absolute", right: spacing.lg, width: 56, height: 56, borderRadius: 28,
@@ -272,6 +317,12 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6,
   },
   empty: { alignItems: "center", padding: spacing["3xl"], gap: spacing.md },
+  stageBox: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, gap: 6 },
+  stageLabel: { fontSize: 13, color: colors.onSurfaceSecondary },
+  stageTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceTertiary, overflow: "hidden" },
+  stageFill: { height: "100%" },
+  catTag: { marginTop: spacing.sm, fontSize: 11, fontWeight: "700", color: colors.muted },
+  paidBtn: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.success, backgroundColor: colors.surfaceSecondary },
   emptyText: { color: colors.muted, fontSize: 15 },
   modalHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

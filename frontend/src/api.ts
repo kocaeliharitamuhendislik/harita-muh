@@ -41,13 +41,19 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
     ...(init.headers as any),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "Bağlantı hatası, internetinizi kontrol edin");
+  }
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!res.ok) {
-    const msg = (data && (data.detail || data.message)) || `Hata ${res.status}`;
-    throw new ApiError(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
+    const detail = data && (data.detail || data.message);
+    const msg = typeof detail === "string" ? detail : res.status === 422 ? "Lütfen girdiğiniz bilgileri kontrol edin" : `İşlem başarısız (${res.status})`;
+    throw new ApiError(res.status, msg);
   }
   return data as T;
 }

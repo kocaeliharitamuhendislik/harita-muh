@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "HaritaPro",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -40,7 +40,14 @@
       "expo-web-browser",
       "expo-status-bar",
       "@react-native-vector-icons/ionicons",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Evrak ve arazi fotoğraflarını işe eklemek için",
+          "cameraPermission": "Evrak ve arazi fotoğrafı çekip işe eklemek için"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

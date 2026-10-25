@@ -120,7 +120,7 @@ function InviteModal({ visible, onClose, onCreated }: any) {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
           <Field label="Ad Soyad" value={name} onChangeText={setName} testID="inv-name" />
           <Field label="E-posta" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" testID="inv-email" />
-          <Field label="Geçici Şifre (çalışan değiştirebilir)" value={password} onChangeText={setPassword} secureTextEntry testID="inv-pw" />
+          <Field label="Geçici Şifre" value={password} onChangeText={setPassword} secureTextEntry testID="inv-pw" />
           {err && <Text style={{ color: colors.error }}>{err}</Text>}
           <Text style={{ color: colors.muted, fontSize: 12 }}>Çalışan bu bilgilerle giriş yapacak. Lütfen güvenli bir şifre paylaşın.</Text>
         </ScrollView>
