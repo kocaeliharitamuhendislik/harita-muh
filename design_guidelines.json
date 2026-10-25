@@ -1,0 +1,155 @@
+{
+  "app_name": "HaritaPro",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A highly readable, trustworthy, and organized professional tool with tactile engineering undertones and an earthy botanical palette.",
+  "color": {
+    "surface": "#FAFAFA",
+    "onSurface": "#1C1C1E",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1C1E",
+    "surfaceTertiary": "#F0F0F0",
+    "onSurfaceTertiary": "#1C1C1E",
+    "surfaceInverse": "#1C1C1E",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#4A6652",
+    "brandPrimary": "#4A6652",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#688771",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E6EBE7",
+    "onBrandTertiary": "#2C3D31",
+    "success": "#34C759",
+    "onSuccess": "#FFFFFF",
+    "warning": "#FF9500",
+    "onWarning": "#FFFFFF",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#E6EBE7",
+    "onInfo": "#2C3D31",
+    "border": "#E5E5EA",
+    "borderStrong": "#C7C7CC",
+    "divider": "#E5E5EA",
+    "muted": "#8E8E93",
+    "onBrand": "#FFFFFF"
+  },
+  "typography": {
+    "displayFontFamily": "Geist-Medium",
+    "textFontFamily": "Geist-Regular",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use iOS-native comfortable vertical rhythms. Generous padding around content to frame data, not dominate it.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar",
+      "Sticky headers over scrolling content",
+      "Floating action buttons (FAB)"
+    ],
+    "dont's": [
+      "Form fields",
+      "List rows",
+      "Body content",
+      "Every button"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "tab_switch": "selection",
+    "status_toggle": "impactMedium",
+    "pull_to_refresh": "impactLight",
+    "error_state": "notificationError",
+    "success_state": "notificationSuccess"
+  },
+  "screens": [
+    {
+      "name": "Login",
+      "purpose": "Entry point for owner and employees.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "N/A",
+        "error": "Invalid credentials toast/alert"
+      },
+      "layout": "Full-bleed background image of engineering blueprint with a heavy gradient-to-dark scrim. Centered login card (surfaceSecondary, shadow 1, radius lg) containing Email, Password inputs, and a sticky sticky primary CTA. Safe area applied."
+    },
+    {
+      "name": "Dashboard",
+      "purpose": "Role-based home screen. Owner sees financials; Employees see field tasks.",
+      "states": {
+        "loading": "Skeleton loaders for cards",
+        "empty": "Illustration with 'Henüz bir iş/görev atanmadı.'",
+        "error": "Readable message + Retry button"
+      },
+      "layout": "Modular design. Owner: Top 2-col grid for financial KPI cards (Agreed, Received, Remaining). Below: List of active projects. Employee: 'Today's Field Program' calendar strip on top, followed by a vertical list of assigned tasks. Floating Action Button (FAB) for owner to add new project."
+    },
+    {
+      "name": "ProjectDetail",
+      "purpose": "Central hub for a single job/project, combining documents, field program, and institution tracking.",
+      "states": {
+        "loading": "Spinner",
+        "empty": "Empty state for tabs like Documents",
+        "error": "Failed to load project details"
+      },
+      "layout": "Sticky header with project title and glass background. Segmented control (Tabs: Finans, Evraklar, Arazi, Kurum). 'Finans' (Owner only) uses large numbers and progress bars. 'Evraklar' uses a 2-col grid for uploaded files (Tapu, İmar) with upload FAB. 'Kurum' uses an accordion checklist layout for Kadastro, Tapu, Belediye with status indicators (Pending/Approved/Rejected)."
+    }
+  ],
+  "images": {
+    "login_background": {
+      "url": "https://images.unsplash.com/photo-1542621334-a254cf47733d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxlbmdpbmVlcmluZyUyMGJsdWVwcmludCUyMHRleHR1cmUlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc5Mjk2MzQ5MHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Engineering blueprint texture"
+    },
+    "dashboard_hero_owner": {
+      "url": "https://images.unsplash.com/photo-1569258592171-357ea26da4df?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhcmNoaXRlY3R1cmUlMjBjb25jcmV0ZSUyMGJ1aWxkaW5nfGVufDB8fHx8MTc5Mjk2MzQ5MHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Modern concrete building structure"
+    },
+    "dashboard_hero_employee": {
+      "url": "https://images.unsplash.com/photo-1664662568348-24b1482b6354?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxjb25zdHJ1Y3Rpb24lMjBzaXRlJTIwZmllbGQlMjB3b3JrZXIlMjBjbGlwYm9hcmR8ZW58MHx8fHwxNzkyOTYzNDkwfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Field worker on construction site"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Implement a strict Role-Based Access Control (RBAC) UI logic. The 'Finans' tab and Expense charts must be completely hidden from employee accounts.",
+    "For the Owner's financial dashboard, use modular 2-col grids for KPIs (Anlaşan Tutar, Kalan Ödeme) to save vertical space. Use progress rings or horizontal bars to visualize collection status.",
+    "Implement the 'Kurum Süreçleri' (Institution Processes) as interactive accordions or checklist items with clear Status Indicators (Pending=Warning color, Approved=Success color, Rejected=Error color).",
+    "Document management (Evraklar) must use a structured grid layout for thumbnails/icons (PDF, Tapu, Fotoğraf), ensuring large hit areas (>=44x44pt).",
+    "Apply gradient scrims (transparent to ≥70% surfaceInverse) on the login_background image to guarantee text readability.",
+    "Use glassmorphism (expo-blur) on the bottom tab bar and sticky headers to give it the iOS-Native Clean premium feel.",
+    "Ensure all text remains left-aligned or logically grouped. Avoid center alignment for data-heavy sections.",
+    "Strictly follow the color palette provided. Use Moss Green (#4A6652) as the primary brand color to reflect the engineering/mapping/land domain. Do not use any blues or purples."
+  ]
+}
