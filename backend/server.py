@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Literal
 from pathlib import Path
+from fastapi.responses import FileResponse
 import os, uuid, bcrypt, jwt, requests, logging, secrets as pysecrets
 
 ROOT_DIR = Path(__file__).parent
@@ -893,6 +894,22 @@ async def replace_document_file(doc_id: str, file: UploadFile = File(...), user=
     return doc
 
 app.include_router(api)
+
+# Hosted web version (Windows/desktop browsers): static Expo web export served at /api/web
+WEB_DIR = ROOT_DIR / "web_dist"
+
+
+@app.get("/api/web")
+@app.get("/api/web/{path:path}")
+async def web_app(path: str = ""):
+    target = (WEB_DIR / path).resolve() if path else None
+    if target and target.is_file() and str(target).startswith(str(WEB_DIR.resolve())):
+        return FileResponse(target)
+    index = WEB_DIR / "index.html"
+    if not index.is_file():
+        raise HTTPException(404, "Web sürümü henüz hazır değil")
+    return FileResponse(index)
+
 app.add_middleware(
     CORSMiddleware, allow_credentials=True, allow_origins=["*"],
     allow_methods=["*"], allow_headers=["*"],

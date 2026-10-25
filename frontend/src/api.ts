@@ -1,6 +1,8 @@
+import { Platform } from "react-native";
 import { storage } from "@/src/utils/storage";
 
-const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL!;
+// On web, talk to the same address the page was opened from so the hosted web version keeps working.
+const BACKEND = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : process.env.EXPO_PUBLIC_BACKEND_URL!;
 export const API_BASE = `${BACKEND}/api`;
 export const TOKEN_KEY = "auth_token";
 

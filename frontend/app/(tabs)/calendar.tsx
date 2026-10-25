@@ -7,7 +7,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "r
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "@/src/api";
+import { api, API_BASE } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
 
 type Schedule = {
@@ -72,7 +72,7 @@ export default function CalendarScreen() {
   const toggleStatus = async (id: string, status: string) => {
     const next = status === "tamamlandi" ? "planlandi" : "tamamlandi";
     const form = new FormData(); form.append("status", next);
-    await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/schedules/${id}/status`, {
+    await fetch(`${API_BASE}/schedules/${id}/status`, {
       method: "POST", body: form as any,
       headers: { Authorization: `Bearer ${await (await import("@/src/api")).getToken()}` },
     });

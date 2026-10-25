@@ -35,3 +35,8 @@ Harita mühendislik firması için mobil takip uygulaması: sahip ve çalışanl
 - Yanlış yüklenen evrak düzenlenebilir: ad değiştirme, evrak türünü değiştirme, dosyayı yenisiyle değiştirme, silme.
 - API: PATCH /api/documents/{id} (category, name), PUT /api/documents/{id}/file (multipart file). Owner tümü, çalışan yalnızca atandığı işler. Silme: owner veya yükleyen.
 - UI: src/components/edit-doc-sheet.tsx, evrak satırındaki kalem ikonu.
+
+## Windows / tarayıcı sürümü (Haziran 2026)
+- Expo web export backend/web_dist içine alınır ve FastAPI tarafından /api/web adresinden sunulur (yayınlanan adres + /api/web).
+- Web'de API adresi sayfanın açıldığı adresten alınır (src/api.ts).
+- Kod değişirse yeniden üret: `bash frontend/scripts/build-web.sh` (app.json'a geçici baseUrl ekler ve geri alır), sonra yeniden yayınla.
