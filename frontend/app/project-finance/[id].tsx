@@ -7,7 +7,7 @@ import { api } from "@/src/api";
 import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
 import { Card, fmtMoney, fmtDate } from "@/src/ui";
-import { Field } from "@/app/(tabs)/projects";
+import { Field } from "@/src/ui";
 import { DateTimeField } from "@/src/components/date-time-field";
 import { UpcomingPayments, Planned } from "@/src/components/finance-parts";
 import { useTeam, teamNames } from "@/src/components/team";

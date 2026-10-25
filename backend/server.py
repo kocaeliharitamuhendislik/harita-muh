@@ -115,12 +115,18 @@ class InviteIn(BaseModel):
     name: str
     email: EmailStr
     password: str = Field(min_length=6, max_length=64)
+    phone: str = ""
+
+class UserPatch(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
 
 class UserOut(BaseModel):
     id: str
     name: str
     email: EmailStr
     role: str
+    phone: str = ""
     disabled: bool = False
     created_at: datetime
 
@@ -151,12 +157,12 @@ class PlannedIn(BaseModel):
 class ProjectPatch(BaseModel):
     category: Optional[Literal["kadastro", "belediye", "diger"]] = None
     payment_completed: Optional[bool] = None
+    status: Optional[Literal["aktif", "bitti", "iptal"]] = None
     name: Optional[str] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[str] = None
     offer_amount: Optional[float] = None
     agreed_amount: Optional[float] = None
     assigned_user_ids: Optional[List[str]] = None
@@ -198,6 +204,7 @@ class ScheduleIn(BaseModel):
     note: str = ""
     assigned_user_ids: List[str] = []
     status: Literal["planlandi", "tamamlandi", "iptal"] = "planlandi"
+    kind: Literal["arazi", "gorev"] = "arazi"
 
 class ScheduleOut(ScheduleIn):
     id: str
@@ -302,12 +309,25 @@ async def create_user(body: InviteIn, owner=Depends(require_owner)):
         "email": email,
         "password_hash": hash_pw(body.password),
         "role": "employee",
+        "phone": body.phone.strip(),
         "disabled": False,
         "created_at": datetime.now(timezone.utc),
     }
     await db.users.insert_one(user)
     user.pop("password_hash", None)
     return user
+
+@api.patch("/users/{uid}", response_model=UserOut)
+async def patch_user(uid: str, body: UserPatch, owner=Depends(require_owner)):
+    update = {k: v.strip() for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "name" in update and not update["name"]:
+        raise HTTPException(400, "Ad boş olamaz")
+    if not update:
+        raise HTTPException(400, "Güncellenecek alan yok")
+    r = await db.users.update_one({"id": uid}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Kullanıcı bulunamadı")
+    return await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
 
 @api.delete("/users/{uid}")
 async def delete_user(uid: str, owner=Depends(require_owner)):
@@ -484,6 +504,15 @@ async def patch_project(pid: str, body: ProjectPatch, owner=Depends(require_owne
         cur = await db.projects.find_one({"id": pid}, {"_id": 0, "category": 1})
         if cur and cur.get("category") != update["category"]:
             update["stage_index"] = 0
+    if "name" in update and not (update["name"] or "").strip():
+        raise HTTPException(400, "İş adı boş olamaz")
+    if "category" in update or update.get("status") == "bitti":
+        cur = await db.projects.find_one({"id": pid}, {"_id": 0, "category": 1, "status": 1})
+        if cur:
+            cat = update.get("category", cur.get("category"))
+            st = update.get("status", cur.get("status"))
+            if st == "bitti" and cat in STAGE_COUNTS and (update.get("status") == "bitti" and cur.get("status") != "bitti" or "stage_index" in update):
+                update["stage_index"] = STAGE_COUNTS[cat] - 1
     r = await db.projects.update_one({"id": pid}, {"$set": update})
     if r.matched_count == 0:
         raise HTTPException(404, "Proje bulunamadı")

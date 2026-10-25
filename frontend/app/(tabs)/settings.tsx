@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { useState, useCallback, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,9 +7,9 @@ import { api } from "@/src/api";
 import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
 import { Button, Card } from "@/src/ui";
-import { Field } from "./projects";
+import { Field } from "@/src/ui";
 
-type User = { id: string; name: string; email: string; role: string; disabled: boolean };
+type User = { id: string; name: string; email: string; role: string; disabled: boolean; phone?: string };
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
@@ -18,6 +18,8 @@ export default function Settings() {
   const isOwner = user?.role === "owner";
   const [users, setUsers] = useState<User[]>([]);
   const [showInvite, setShowInvite] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!isOwner) return;
@@ -32,7 +34,8 @@ export default function Settings() {
   };
 
   const removeUser = async (uid: string) => {
-    try { await api(`/users/${uid}`, { method: "DELETE" }); load(); } catch {}
+    if (confirmDel !== uid) { setConfirmDel(uid); return; }
+    try { await api(`/users/${uid}`, { method: "DELETE" }); setConfirmDel(null); load(); } catch {}
   };
 
   return (
@@ -70,9 +73,15 @@ export default function Settings() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.userName}>{u.name}</Text>
                   <Text style={styles.userEmail}>{u.email}</Text>
+                  <Text style={[styles.userEmail, !u.phone && { color: colors.warning }]}>{u.phone || "Telefon eklenmedi"}</Text>
                 </View>
-                <Pressable testID={`delete-user-${u.id}`} onPress={() => removeUser(u.id)}>
-                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                <Pressable testID={`edit-user-${u.id}`} onPress={() => setEditUser(u)} hitSlop={8} style={styles.iconBtn}>
+                  <Ionicons name="create-outline" size={20} color={colors.brandPrimary} />
+                </Pressable>
+                <Pressable testID={`delete-user-${u.id}`} onPress={() => removeUser(u.id)} hitSlop={8} style={styles.iconBtn}>
+                  {confirmDel === u.id
+                    ? <Text style={{ color: colors.error, fontWeight: "700", fontSize: 12 }}>Sil?</Text>
+                    : <Ionicons name="trash-outline" size={18} color={colors.error} />}
                 </Pressable>
               </View>
             ))}
@@ -83,7 +92,49 @@ export default function Settings() {
       </ScrollView>
 
       <InviteModal visible={showInvite} onClose={() => setShowInvite(false)} onCreated={load} />
+      <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSaved={load} />
     </View>
+  );
+}
+
+function EditUserModal({ user, onClose, onSaved }: { user: User | null; onClose: () => void; onSaved: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) { setName(user.name); setPhone(user.phone || ""); setErr(null); }
+  }, [user]);
+
+  const save = async () => {
+    if (!user) return;
+    if (!name.trim()) { setErr("Ad boş olamaz"); return; }
+    setSaving(true); setErr(null);
+    try {
+      await api(`/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), phone: phone.trim() }) });
+      onClose(); onSaved();
+    } catch (e: any) { setErr(e?.message || "Kaydedilemedi"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Modal visible={!!user} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.md }]}>
+          <Pressable onPress={onClose} hitSlop={8}><Text style={{ color: colors.muted }}>Vazgeç</Text></Pressable>
+          <Text style={styles.modalTitle}>Çalışanı Düzenle</Text>
+          <Pressable onPress={save} disabled={saving} testID="save-edit-user" hitSlop={8}><Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{saving ? "..." : "Kaydet"}</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }} keyboardShouldPersistTaps="handled">
+          <Field label="Ad Soyad" value={name} onChangeText={(t: string) => { setName(t); if (err) setErr(null); }} testID="edit-user-name" />
+          <Field label="WhatsApp Telefonu" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="05xx xxx xx xx" testID="edit-user-phone" />
+          {!!err && <Text testID="edit-user-error" style={{ color: colors.error }}>{err}</Text>}
+          <Text style={{ color: colors.muted, fontSize: 12 }}>Takvimden günün işlerini bu numaraya WhatsApp ile hatırlatabilirsiniz.</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -92,20 +143,21 @@ function InviteModal({ visible, onClose, onCreated }: any) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setErr(null);
     if (!name.trim() || !email.trim() || password.length < 6) {
-      setErr("Tüm alanları doldurun (şifre en az 6)"); return;
+      setErr("Ad, e-posta ve şifre gerekli (şifre en az 6 karakter)"); return;
     }
     setSaving(true);
     try {
-      await api("/users", { method: "POST", body: JSON.stringify({ name: name.trim(), email: email.trim(), password }) });
-      setName(""); setEmail(""); setPassword("");
+      await api("/users", { method: "POST", body: JSON.stringify({ name: name.trim(), email: email.trim(), password, phone: phone.trim() }) });
+      setName(""); setEmail(""); setPassword(""); setPhone("");
       onClose(); onCreated();
-    } catch (e: any) { setErr(e?.message || "Hata"); }
+    } catch (e: any) { setErr(e?.message || "Kaydedilemedi"); }
     finally { setSaving(false); }
   };
 
@@ -113,7 +165,7 @@ function InviteModal({ visible, onClose, onCreated }: any) {
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.md }]}>
-          <Pressable onPress={onClose}><Text style={{ color: colors.muted }}>İptal</Text></Pressable>
+          <Pressable onPress={onClose}><Text style={{ color: colors.muted }}>Vazgeç</Text></Pressable>
           <Text style={styles.modalTitle}>Çalışan Ekle</Text>
           <Pressable onPress={save} disabled={saving} testID="save-invite"><Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>Kaydet</Text></Pressable>
         </View>
@@ -121,6 +173,7 @@ function InviteModal({ visible, onClose, onCreated }: any) {
           <Field label="Ad Soyad" value={name} onChangeText={setName} testID="inv-name" />
           <Field label="E-posta" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" testID="inv-email" />
           <Field label="Geçici Şifre" value={password} onChangeText={setPassword} secureTextEntry testID="inv-pw" />
+          <Field label="WhatsApp Telefonu" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="05xx xxx xx xx" testID="inv-phone" />
           {err && <Text style={{ color: colors.error }}>{err}</Text>}
           <Text style={{ color: colors.muted, fontSize: 12 }}>Çalışan bu bilgilerle giriş yapacak. Lütfen güvenli bir şifre paylaşın.</Text>
         </ScrollView>
@@ -133,6 +186,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, backgroundColor: colors.surface },
   title: { fontSize: 28, fontWeight: "700", color: colors.onSurface, letterSpacing: -0.5 },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  iconBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
   avatarSm: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandSecondary, alignItems: "center", justifyContent: "center" },

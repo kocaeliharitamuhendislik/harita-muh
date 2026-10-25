@@ -16,6 +16,7 @@ Harita mühendislik firması için mobil takip uygulaması: sahip ve çalışanl
 - Files: Emergent Object Storage via backend; web viewing uses short-lived ?token=
 
 ## Implemented (2026-06)
+- Iteration 4: job edit/delete modal (owner), Projeler search (Turkish accent-insensitive), Takvim with kind arazi/gorev + filters, owner WhatsApp reminder of the day's tasks per employee (employee phone in Ayarlar), PATCH validation + stage/status sync
 - Iteration 3: balances removed from Projeler (owner-only finance layer /project-finance/[id]); Finans tab = Özet (KPIs, upcoming planned payments w/ "Tahsil Edildi", monthly/yearly income-expense) / İş Bakiyeleri / Giderler; Projeler split Tüm/Kadastro/Belediye/Diğer; per-category document checklists; Kadastro (6) & Belediye (7) stage workflows editable by owner + assigned employees with history; schedules editable/deletable by employees; "Ödeme Tamamlandı" for finished jobs without amounts; full Turkish UI
 - Iteration 2: employee assignment on projects/schedules (schedules inherit project team), tap-to-pick date/time sheet, WhatsApp remaining-balance reminder (client phone), PDF project report (finance only for owner), week navigation in calendar, Turkish labels, timezone fix (tz_aware Mongo)
 - Auth, owner seeding, employee create/delete

@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Field } from "./projects";
+import { Field } from "@/src/ui";
 import { DateTimeField } from "@/src/components/date-time-field";
 import { Chip, fmtMoney, fmtDate, label, SegmentedControl } from "@/src/ui";
 import { UpcomingPayments, IncomeExpense, ProjectBalances, Planned } from "@/src/components/finance-parts";

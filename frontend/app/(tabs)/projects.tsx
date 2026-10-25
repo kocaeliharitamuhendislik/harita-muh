@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth-context";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
-import { Chip, label, SegmentedControl } from "@/src/ui";
+import { Chip, label, SegmentedControl, Field } from "@/src/ui";
 import { AssigneeChips, useTeam } from "@/src/components/team";
 import { PROJECT_CATEGORIES, catOf, stageInfo, ProjectCategory } from "@/src/workflows";
 
@@ -33,6 +33,7 @@ export default function Projects() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("hepsi");
   const [seg, setSeg] = useState<string>("tumu");
+  const [q, setQ] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
   const load = useCallback(async () => {
@@ -49,11 +50,15 @@ export default function Projects() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const norm = (s?: string) => (s || "").toLocaleLowerCase("tr-TR")
+    .replace(/ç/g, "c").replace(/ğ/g, "g").replace(/ı/g, "i").replace(/ö/g, "o").replace(/ş/g, "s").replace(/ü/g, "u").replace(/i̇/g, "i");
+  const query = norm(q.trim());
+  const matches = (p: Project) => !query || [p.name, p.client_name, p.location].some((f) => norm(f).includes(query));
   const filtered = items.filter((p) =>
-    (seg === "tumu" || catOf(p) === seg) && (filter === "hepsi" || p.status === filter));
+    (seg === "tumu" || catOf(p) === seg) && (filter === "hepsi" || p.status === filter) && matches(p));
   const countOf = (k: string) => items.filter((p) => k === "tumu" || catOf(p) === k).length;
   const segments = [
-    { key: "tumu", label: `Tüm İşler (${countOf("tumu")})` },
+    { key: "tumu", label: `Tümü (${countOf("tumu")})` },
     ...PROJECT_CATEGORIES.map((c) => ({ key: c.key, label: `${c.short} (${countOf(c.key)})` })),
   ];
 
@@ -69,13 +74,31 @@ export default function Projects() {
         </View>
       </View>
 
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={18} color={colors.muted} />
+        <TextInput
+          testID="project-search"
+          value={q}
+          onChangeText={setQ}
+          placeholder="Müşteri, ada/parsel veya konum ara"
+          placeholderTextColor={colors.muted}
+          style={styles.searchInput}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
+        {!!q && (
+          <Pressable testID="project-search-clear" onPress={() => setQ("")} hitSlop={10}>
+            <Ionicons name="close-circle" size={18} color={colors.muted} />
+          </Pressable>
+        )}
+      </View>
       <SegmentedControl items={segments} value={seg} onChange={setSeg} testIDPrefix="seg" />
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chipRow}
-        style={{ maxHeight: 56 }}
+        style={{ maxHeight: 56, flexGrow: 0, flexShrink: 0 }}
       >
         {STATUSES.map((s) => (
           <Chip key={s} label={label(s)} active={filter === s} onPress={() => setFilter(s)} testID={`filter-${s}`} />
@@ -92,7 +115,7 @@ export default function Projects() {
           !loading ? (
             <View style={styles.empty}>
               <Ionicons name="briefcase-outline" size={48} color={colors.muted} />
-              <Text style={styles.emptyText}>Henüz bir iş/görev atanmadı.</Text>
+              <Text style={styles.emptyText}>{q ? "Aramanıza uygun iş bulunamadı." : "Henüz bir iş/görev atanmadı."}</Text>
             </View>
           ) : null
         }
@@ -258,28 +281,8 @@ function CreateProjectModal({ visible, onClose, onCreated, defaultCategory }: { 
   );
 }
 
-export function Field({ label, multiline, testID, ...rest }: any) {
-  return (
-    <View>
-      <Text style={fstyles.label}>{label}</Text>
-      <TextInput
-        testID={testID}
-        placeholderTextColor={colors.muted}
-        multiline={multiline}
-        style={[fstyles.input, multiline && { minHeight: 90, textAlignVertical: "top", paddingTop: spacing.md }]}
-        {...rest}
-      />
-    </View>
-  );
-}
-
 const fstyles = StyleSheet.create({
   label: { fontSize: 13, color: colors.onSurfaceTertiary, fontWeight: "600", marginBottom: spacing.xs },
-  input: {
-    minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, backgroundColor: colors.surfaceSecondary,
-    color: colors.onSurface, fontSize: 15,
-  },
 });
 
 const styles = StyleSheet.create({
@@ -317,6 +320,11 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6,
   },
   empty: { alignItems: "center", padding: spacing["3xl"], gap: spacing.md },
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm, height: 44, marginHorizontal: spacing.lg, marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: colors.onSurface, height: 44 },
   stageBox: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, gap: 6 },
   stageLabel: { fontSize: 13, color: colors.onSurfaceSecondary },
   stageTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceTertiary, overflow: "hidden" },

@@ -1,5 +1,8 @@
 import { useState, useCallback } from "react";
-import { ScheduleModal } from "@/src/components/schedule-modal";
+import { ScheduleModal, KIND_OPTS } from "@/src/components/schedule-modal";
+import { RemindSheet } from "@/src/components/remind-sheet";
+import { useAuth } from "@/src/auth-context";
+import { Chip } from "@/src/ui";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +19,7 @@ type Schedule = {
   location: string;
   note: string;
   status: string;
+  kind?: "arazi" | "gorev";
   assigned_user_ids: string[];
 };
 
@@ -34,6 +38,10 @@ export default function CalendarScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
+  const { user } = useAuth();
+  const isOwner = user?.role === "owner";
+  const [kindFilter, setKindFilter] = useState<string>("hepsi");
+  const [remindOpen, setRemindOpen] = useState(false);
   const [selected, setSelected] = useState<Date>(startOfDay(new Date()));
   const [stripStart, setStripStart] = useState<Date>(startOfDay(new Date()));
   const shiftStrip = (n: number) => {
@@ -57,8 +65,9 @@ export default function CalendarScreen() {
     const d = new Date(stripStart); d.setDate(d.getDate() + i); return startOfDay(d);
   });
 
-  const todays = items.filter((it) => sameDay(new Date(it.date), selected))
+  const dayItems = items.filter((it) => sameDay(new Date(it.date), selected))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const todays = dayItems.filter((it) => kindFilter === "hepsi" || (it.kind || "arazi") === kindFilter);
 
   const toggleStatus = async (id: string, status: string) => {
     const next = status === "tamamlandi" ? "planlandi" : "tamamlandi";
@@ -73,7 +82,15 @@ export default function CalendarScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={styles.title}>Arazi Takvimi</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Takvim</Text>
+          {isOwner && (
+            <Pressable testID="remind-btn" onPress={() => setRemindOpen(true)} style={styles.remindBtn}>
+              <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>Hatırlat</Text>
+            </Pressable>
+          )}
+        </View>
         <View style={styles.navRow}>
           <Text style={[styles.sub, { flex: 1 }]}>{selected.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</Text>
           <Pressable testID="strip-prev" onPress={() => shiftStrip(-7)} style={styles.navBtn}>
@@ -104,6 +121,19 @@ export default function CalendarScreen() {
         })}
       </ScrollView>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kindRow} style={{ maxHeight: 56, flexGrow: 0 }}>
+        <Chip label={`Tümü (${dayItems.length})`} active={kindFilter === "hepsi"} onPress={() => setKindFilter("hepsi")} testID="kind-filter-hepsi" />
+        {KIND_OPTS.map((k) => (
+          <Chip
+            key={k.key}
+            label={`${k.label} (${dayItems.filter((i) => (i.kind || "arazi") === k.key).length})`}
+            active={kindFilter === k.key}
+            onPress={() => setKindFilter(k.key)}
+            testID={`kind-filter-${k.key}`}
+          />
+        ))}
+      </ScrollView>
+
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
@@ -111,7 +141,7 @@ export default function CalendarScreen() {
         {todays.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={48} color={colors.muted} />
-            <Text style={styles.emptyText}>Bu güne atanmış program yok.</Text>
+            <Text style={styles.emptyText}>Bu gün için kayıt yok.</Text>
           </View>
         ) : (
           todays.map((it) => {
@@ -130,6 +160,10 @@ export default function CalendarScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.itemTitle, done && { textDecorationLine: "line-through" }]}>{it.title}</Text>
+                  <View style={styles.kindTag}>
+                    <Ionicons name={it.kind === "gorev" ? "checkbox-outline" : "map-outline"} size={12} color={colors.brandPrimary} />
+                    <Text style={styles.kindText}>{it.kind === "gorev" ? "Günün İşi" : "Arazi"}</Text>
+                  </View>
                   {!!proj && <Text style={styles.itemSub}>{proj.name}</Text>}
                   {!!it.location && (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
@@ -163,6 +197,7 @@ export default function CalendarScreen() {
         defaultDate={selected}
         schedule={editing}
       />
+      <RemindSheet visible={remindOpen} onClose={() => setRemindOpen(false)} day={selected} items={dayItems} projects={projects} />
     </View>
   );
 }
@@ -172,6 +207,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: "700", color: colors.onSurface, letterSpacing: -0.5 },
   sub: { fontSize: 13, color: colors.muted, marginTop: 4, textTransform: "capitalize" },
   navRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  // WhatsApp brand green stays identical across themes
+  remindBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 44, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: "#25D366" },
+  kindRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center", height: 56 },
+  kindTag: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  kindText: { fontSize: 11, color: colors.brandPrimary, fontWeight: "700" },
   navBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   todayBtn: { height: 36, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
   strip: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center", height: 92 },

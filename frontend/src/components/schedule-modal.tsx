@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { Chip } from "@/src/ui";
-import { Field } from "@/app/(tabs)/projects";
+import { Field } from "@/src/ui";
 import { DateTimeField } from "@/src/components/date-time-field";
 import { AssigneeChips, useTeam } from "@/src/components/team";
 
@@ -18,8 +18,14 @@ export type Schedule = {
   location: string;
   note: string;
   status: string;
+  kind?: "arazi" | "gorev";
   assigned_user_ids: string[];
 };
+
+export const KIND_OPTS = [
+  { key: "arazi", label: "Arazi Programı", icon: "map-outline" },
+  { key: "gorev", label: "Günün İşi", icon: "checkbox-outline" },
+] as const;
 
 const STATUS_OPTS = [
   { key: "planlandi", label: "Planlandı" },
@@ -51,6 +57,7 @@ export function ScheduleModal({
   const [location, setLocation] = useState("");
   const [note, setNote] = useState("");
   const [status, setStatus] = useState("planlandi");
+  const [kind, setKind] = useState<"arazi" | "gorev">("arazi");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -68,9 +75,10 @@ export function ScheduleModal({
       setLocation(schedule.location || "");
       setNote(schedule.note || "");
       setStatus(schedule.status || "planlandi");
+      setKind(schedule.kind || "arazi");
       setAssignees(schedule.assigned_user_ids || []);
     } else {
-      setTitle(""); setLocation(""); setNote(""); setDuration("2"); setStatus("planlandi");
+      setTitle(""); setLocation(""); setNote(""); setDuration("2"); setStatus("planlandi"); setKind("arazi");
       setProjectId(presetProjectId ?? null);
       setWhen(at9(defaultDate));
       setAssignees([]);
@@ -85,7 +93,7 @@ export function ScheduleModal({
     const body = JSON.stringify({
       project_id: projectId, title: title.trim(), date: when.toISOString(),
       duration_hours: parseFloat(duration.replace(",", ".")) || 1, location: location.trim(), note: note.trim(),
-      assigned_user_ids: assignees, status,
+      assigned_user_ids: assignees, status, kind,
     });
     try {
       if (editing) await api(`/schedules/${schedule!.id}`, { method: "PUT", body });
@@ -115,13 +123,21 @@ export function ScheduleModal({
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
           <Pressable testID="schedule-cancel" onPress={onClose} hitSlop={8}><Text style={{ color: colors.muted }}>Vazgeç</Text></Pressable>
-          <Text style={styles.title}>{editing ? "Programı Düzenle" : "Yeni Arazi Programı"}</Text>
+          <Text style={styles.title}>{editing ? "Kaydı Düzenle" : "Takvime Ekle"}</Text>
           <Pressable onPress={save} disabled={saving} testID="save-schedule" hitSlop={8}>
             <Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{saving ? "..." : "Kaydet"}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: insets.bottom + spacing.xl }} keyboardShouldPersistTaps="handled">
-          <Field label="Başlık *" value={title} onChangeText={setTitle} placeholder="Örn: Arazi ölçümü" testID="sch-title" />
+          <View>
+            <Text style={styles.label}>Tür</Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              {KIND_OPTS.map((k) => (
+                <Chip key={k.key} label={k.label} active={kind === k.key} onPress={() => setKind(k.key)} testID={`sch-kind-${k.key}`} />
+              ))}
+            </View>
+          </View>
+          <Field label="Başlık *" value={title} onChangeText={setTitle} placeholder={kind === "gorev" ? "Örn: Tapuya evrak teslimi" : "Örn: Arazi ölçümü"} testID="sch-title" />
           {!presetProjectId && (
             <View>
               <Text style={styles.label}>İş</Text>

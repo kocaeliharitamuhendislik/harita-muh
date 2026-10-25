@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 4 (job editing, job search, Takvim kinds + WhatsApp reminders, employee phone). Backend: 68 pytest tests run (51 old + 17 new), 66 pass. The 2 failures are validation gaps in PATCH /api/projects: it accepts any status string and an empty name. Frontend (375x667, owner and employee) checks that passed: edit modal fields are pre-filled; the category warning shows and hides; saving with an empty name shows 'İş adı gerekli'; saved values show in the header and the list; changing the category moves the job to the other segment; deleting needs two taps and returns to Projeler. Employee has no edit button. Search works for name, customer and location (çankaya, MEHMET, 101 ada, İZMİR), together with segments and the status filter; the clear button and the empty-state text work. Takvim: title, kind chips, tags, filter counts, and default kind reset to arazi on a new record. Reminders: the sheet lists only employees with tasks that day; the wa.me/905334445566 link contains the first name, the day and the line '08:00 [İş] Tapuya evrak teslimi'; 'Telefon Ekle' goes to Ayarlar; employee has no remind-btn. Ayarlar: phone or 'Telefon eklenmedi' shows; editing a user saves; inv-phone exists; deleting a user needs two taps. Regression: login, segments, detail tabs and Finans all load. Main UI bug: the horizontal status-chip rows are cut off by the content below them on Projeler and on project detail.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/projects/{pid}", "issue": "ProjectPatch.status is Optional[str] with no Literal check. status='xyz' returns 200 and is saved. Use Optional[Literal['aktif','bitti','iptal']]. Reference: server.py:165"},
+      {"endpoint": "PATCH /api/projects/{pid}", "issue": "name='  ' is accepted and saves an empty job name. The UI checks for this but the API does not. Return 400 'İş adı gerekli' when the stripped name is empty."},
+      {"endpoint": "PATCH /api/projects/{pid}", "issue": "Stage does not match status. Changing status to 'bitti' through PATCH leaves stage_index at 0. Changing the category of a 'bitti' job also resets it to 0, so a finished job shows '1/7 Eksik evrak bekleniyor'. POST create puts a finished job on the last stage (5 for kadastro). Verified via API. PATCH should use the same rule: if the final status is bitti and the category has stages, set stage_index to n-1."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Projeler status filter chips row", "issue": "The horizontal ScrollView (style maxHeight:56 only) shrinks inside the column. Chips span y=179-215 but the first card starts at y=210, so the bottom of 'Hepsi/Aktif/Bitti/İptal' is hidden and hard to read. Fix: style={{ maxHeight: 56, flexGrow: 0, flexShrink: 0 }}, the same as calendar.tsx kindRow. Reference: app/(tabs)/projects.tsx:96-100", "testID": "filter-hepsi", "priority": "HIGH"},
+      {"component": "Project detail tab chips (Evraklar/Arazi/Süreç)", "issue": "Same shrink problem: chips are 74-110 but the scroll container is 64-99, so 11px is cut off. The top of the 'Evraklar' chip is clipped. Reference: app/project/[id].tsx tab ScrollView", "testID": "tab-evraklar", "priority": "MEDIUM"},
+      {"component": "EditProjectModal error text", "issue": "After the empty-name error, 'İş adı gerekli' stays on screen while the user types a valid name. Clear the error when the input changes.", "testID": "edit-project-error", "priority": "LOW"},
+      {"component": "Ayarlar edit-user modal", "issue": "Saving with an empty name does nothing and shows no message. The modal stays open with no feedback.", "testID": "save-edit-user", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Project detail header", "issues": ["At 375px the 3 action buttons plus 'PDF' leave about 100px for the title. The job name is cut to 'TEST_U…'. Consider a smaller PDF button (icon only) or putting the title on its own row."]},
+      {"screen": "Touch targets", "issues": ["Kaydet/Vazgeç header buttons in the edit/invite modals have a 16px tall hit box (edit-project-save 46x16). Add hitSlop or a 44px height.", "remind-btn is 40px tall.", "Projeler and Takvim filter chips are 36px tall.", "edit-user-*/delete-user-* are 40px wide."]},
+      {"screen": "Projeler segments", "issues": ["The 'Tüm İşler (6)' segment label is cut to 'Tüm İşler …' at 375px."]},
+      {"screen": "Projeler search", "issues": ["Search does not ignore Turkish letters: 'cankaya' does not find 'Çankaya' and 'isik' does not find 'Işık'. Many users type without Turkish characters. Suggest mapping ç→c, ğ→g, ı/i→i, ö→o, ş→s, ü→u on both sides."]},
+      {"screen": "RemindSheet", "issues": ["'Telefon Ekle' only goes to Ayarlar. It could open the edit-user modal for that employee directly."]}
+    ],
+    "react_native_issues": [
+      {"component": "Cross-route import", "issue": "EditProjectModal imports Field from a route file ('@/app/(tabs)/projects'). Importing between route modules can create circular imports and Expo Router warnings. Move Field to src/ui. Reference: src/components/edit-project-modal.tsx:8"}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter4_edit_search_remind.py", "/app/test_reports/pytest/pytest_iter4.xml"],
+  "action_items": [
+    "Fix the clipped horizontal chip rows: add flexGrow:0, flexShrink:0 to the status filter ScrollView in projects.tsx:100 and to the tab ScrollView in project/[id].tsx",
+    "PATCH /api/projects: check status with a Literal and reject an empty or blank name (400)",
+    "PATCH /api/projects: when the final status is 'bitti' (status change or category change), set stage_index to the last stage, as create does",
+    "Make header Kaydet/Vazgeç buttons and remind-btn at least 44px tall, or add hitSlop",
+    "Clear edit-project-error when the input changes; show an error for an empty name in the edit-user modal",
+    "Optional: make search ignore Turkish letters; move Field out of the route file into src/ui"
+  ],
+  "critical_code_review_comments": [
+    "server.py:157-168 ProjectPatch has no validation for status or an empty name (confirmed by the 2 failing tests).",
+    "server.py:503-506 a category change sets stage_index to 0 without looking at status 'bitti'.",
+    "edit-project-modal.tsx:8 imports from a route file (app/(tabs)/projects).",
+    "projects.tsx:43-44 catch block swallows load errors silently, so there is no error state on the list."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter4_edit_search_remind.py"],
+  "success_rate": {"backend": "97% (66/68)", "frontend": "~92% (all requested flows work; chip rows clipped)"},
+  "seed_data_creation": "Temporary TEST_ project, TEST_ schedules and test_ users were created and deleted. Seed jobs were not modified.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests -n 0. Browser TZ is UTC, so the 11:00 local 'Tapuya evrak teslimi' shows as 08:00. To capture the WhatsApp link, override window.open with add_init_script (Linking.openURL on web calls window.open). Wait about 1s after opening modals (slide animation), or clicks fail with 'outside of viewport'. Segment testIDs are seg-{tumu|kadastro|belediye|diger}.",
+  "rca_of_issue": "Clipped chips: a horizontal ScrollView in a flex column has default flexShrink and no flexGrow:0, so RN-web shrinks it below the chip height. calendar.tsx already uses flexGrow:0 and does not have the problem."
+}

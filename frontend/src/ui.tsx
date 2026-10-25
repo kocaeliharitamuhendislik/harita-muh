@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput } from "react-native";
 import { colors, spacing, radius } from "@/src/theme";
 
 export function Button({
@@ -160,3 +160,28 @@ export function fmtDate(d?: string | Date | null) {
   const dt = typeof d === "string" ? new Date(d) : d;
   return dt.toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" });
 }
+
+export function Field({ label, multiline, testID, ...rest }: any) {
+  return (
+    <View>
+      <Text style={fstyles.label}>{label}</Text>
+      <TextInput
+        testID={testID}
+        placeholderTextColor={colors.muted}
+        multiline={multiline}
+        style={[fstyles.input, multiline && { minHeight: 90, textAlignVertical: "top", paddingTop: spacing.md }]}
+        {...rest}
+      />
+    </View>
+  );
+}
+
+const fstyles = StyleSheet.create({
+  label: { fontSize: 13, color: colors.onSurfaceTertiary, fontWeight: "600", marginBottom: spacing.xs },
+  input: {
+    minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, backgroundColor: colors.surfaceSecondary,
+    color: colors.onSurface, fontSize: 15,
+  },
+});
+

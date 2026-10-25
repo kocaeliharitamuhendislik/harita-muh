@@ -10,12 +10,13 @@ import { useAuth } from "@/src/auth-context";
 import { colors, spacing, radius } from "@/src/theme";
 import { Button, Card, Chip, StatusDot, fmtDate } from "@/src/ui";
 import { uploadForm } from "@/src/utils/upload";
-import { Field } from "../(tabs)/projects";
+import { Field } from "@/src/ui";
 import { AssigneeChips, useTeam, teamNames } from "@/src/components/team";
 import { shareProjectReport } from "@/src/report";
 import { TextInput, ActivityIndicator } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScheduleModal, Schedule } from "@/src/components/schedule-modal";
+import { EditProjectModal } from "@/src/components/edit-project-modal";
 import { DOC_TYPES, catOf, categoryLabel, docLabel, stageInfo } from "@/src/workflows";
 
 type Project = any;
@@ -42,6 +43,7 @@ export default function ProjectDetail() {
   const [refreshing, setRefreshing] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const team = useTeam();
 
   const makeReport = async () => {
@@ -79,6 +81,11 @@ export default function ProjectDetail() {
           <Text style={styles.hSub} numberOfLines={1}>{categoryLabel(catOf(project))}{project.client_name ? ` • ${project.client_name}` : ""}</Text>
         </View>
         {isOwner && (
+          <Pressable testID="edit-project-btn" onPress={() => setEditOpen(true)} style={xstyles.roundBtn}>
+            <Ionicons name="create-outline" size={20} color={colors.onBrandTertiary} />
+          </Pressable>
+        )}
+        {isOwner && (
           <Pressable testID="open-finance-btn" onPress={() => router.push(`/project-finance/${project.id}`)} style={xstyles.roundBtn}>
             <Ionicons name="wallet-outline" size={20} color={colors.onBrandTertiary} />
           </Pressable>
@@ -94,7 +101,7 @@ export default function ProjectDetail() {
       </View>
       {!!notice && <Text testID="report-notice" style={xstyles.notice}>{notice}</Text>}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={{ maxHeight: 56 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={{ maxHeight: 56, flexGrow: 0, flexShrink: 0 }}>
         {TABS.map((t) => (
           <Chip key={t.key} label={t.label} active={tab === t.key} onPress={() => setTab(t.key)} testID={`tab-${t.key}`} />
         ))}
@@ -109,6 +116,13 @@ export default function ProjectDetail() {
         {tab === "arazi" && <SchedulesTab project={project} />}
         {tab === "surec" && (stageInfo(project) ? <StageTab project={project} onChange={load} /> : <StepsTab projectId={project.id} />)}
       </ScrollView>
+      <EditProjectModal
+        visible={editOpen}
+        onClose={() => setEditOpen(false)}
+        project={project}
+        onSaved={load}
+        onDeleted={() => router.replace("/(tabs)/projects")}
+      />
     </View>
   );
 }
